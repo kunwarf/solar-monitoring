@@ -1,0 +1,26 @@
+[Unit]
+Description=Solar Monitoring System
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=solar
+Group=solar
+WorkingDirectory=/opt/solar-monitoring
+Environment=PATH=/opt/solar-monitoring/venv/bin
+ExecStart=/opt/solar-monitoring/venv/bin/python -m solarhub.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/solar-monitoring
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,89 @@
+# Battery-Optimized Smart Scheduler Configuration
+# Focused on maximum self-sufficiency without load management
+
+smart:
+  policy:
+    enabled: true
+    
+    # SOC & safety (optimized for critical loads)
+    overnight_min_soc_pct: 35  # Slightly higher since loads are critical
+    blackout_reserve_soc_pct: 30  # Your external load shedding kicks in at 30%
+    target_full_before_sunset: true
+    
+    # Battery optimization settings
+    dynamic_soc_enabled: true
+    min_self_sufficiency_pct: 85.0  # Minimum target
+    target_self_sufficiency_pct: 95.0  # Ideal target
+    max_grid_usage_kwh_per_day: 3.0  # Maximum daily grid usage
+    emergency_reserve_hours: 6.0  # 6 hours reserve since loads are critical
+    
+    # Load fallback if learner has little data
+    load_fallback_kw: 1.0
+    
+    # Grid charger power cap
+    max_grid_charge_w: 2000
+    
+    # Enhanced tariff windows for better optimization
+    tariffs:
+      # Cheap overnight charging (highest priority)
+      - kind: cheap
+        start: "23:00"
+        end: "06:00"
+        price: 1.5
+        allow_grid_charge: true
+        allow_discharge: false
+        priority: 1
+        
+      # Normal daytime (PV should handle most)
+      - kind: normal
+        start: "06:00"
+        end: "17:00"
+        price: 1
+        allow_grid_charge: true
+        allow_discharge: true
+        priority: 2
+        
+      # Peak evening (discharge battery to avoid expensive grid)
+      - kind: peak
+        start: "17:00"
+        end: "23:00"
+        price: 3.0
+        allow_grid_charge: false
+        allow_discharge: true
+        priority: 3
+        peak_shaving_enabled: true
+
+  # Enhanced forecast settings
+  forecast:
+    enabled: true
+    provider: "openmeteo"  # Use enhanced weather forecasting
+    lat: 24.8607  # Your location
+    lon: 67.0011
+    tz: "Asia/Karachi"
+    
+    # Battery capacity for optimization
+    batt_capacity_kwh: 10.0  # Adjust to your actual battery capacity
+
+# Inverter configuration (unchanged)
+inverters:
+  - id: "senergy1"
+    adapter:
+      type: "senergy"
+      host: "192.168.1.100"
+      port: 502
+      unit_id: 1
+      addr_offset: 0
+    solar:
+      - pv_dc_kw: 5.0
+        perf_ratio: 0.8
+        tilt_deg: 30
+        azimuth_deg: 180
+        albedo: 0.2
+
+# MQTT configuration (unchanged)
+mqtt:
+  enabled: true
+  host: "localhost"
+  port: 1883
+  base_topic: "solarhub"
+

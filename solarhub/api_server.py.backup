@@ -1,0 +1,566 @@
+import threading
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+# Get the main application logger
+log = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_api(solar_app) -> FastAPI:
+    """
+    Create a FastAPI app bound to the running SolarApp instance.
+    Exposes minimal REST endpoints used by the React UI.
+    """
+    app = FastAPI(title="SolarHub API")
+    
+    # Add CORS middleware to allow requests from any origin
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins for development
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Add request logging middleware
+    @app.middleware("http")
+    async def log_requests(request, call_next):
+        log.info(f"API request: {request.method} {request.url}")
+        try:
+            response = await call_next(request)
+            log.info(f"API response: {response.status_code}")
+            return response
+        except Exception as e:
+            log.error(f"API request failed: {e}", exc_info=True)
+            raise
+
+    @app.get("/api/health")
+    def api_health() -> Dict[str, Any]:
+        """Health check endpoint to test if API server is working."""
+        return {"status": "ok", "message": "API server is running", "timestamp": _now_iso()}
+    
+    @app.get("/api/test")
+    def api_test() -> Dict[str, Any]:
+        """Test endpoint to verify API server functionality."""
+        try:
+            return {
+                "status": "ok", 
+                "solar_app_type": str(type(solar_app)), 
+                "has_get_now": hasattr(solar_app, 'get_now'),
+                "timestamp": _now_iso()
+            }
+        except Exception as e:
+            log.error(f"Error in test endpoint: {e}", exc_info=True)
+            return {"status": "error", "error": str(e)}
+    
+    @app.get("/api/now")
+    def api_now(inverter_id: str = "senergy1") -> Dict[str, Any]:
+        """Get current telemetry data."""
+        try:
+            log.info(f"API /api/now called for inverter_id: {inverter_id}")
+            log.info(f"solar_app type: {type(solar_app)}")
+            log.info(f"solar_app has get_now: {hasattr(solar_app, 'get_now')}")
+            
+            # Get telemetry from solar_app (already converted to dict)
+            tel = solar_app.get_now(inverter_id)
+            log.info(f"get_now returned: {type(tel)} - {tel is not None}")
+            
+            if not tel:
+                return {
+                    "inverter_id": inverter_id,
+                    "now": None,
+                    "error": "No telemetry data available"
+                }
+            
+            # Get all available telemetry data
+            extra = tel.get("extra", {})
+            
+            # Normalize keys expected by UI with comprehensive telemetry
+            normalized = {
+                # Timestamp
+                "ts": tel.get("ts") or _now_iso(),
+                
+                # Power flows
+                "pv_power_w": tel.get("pv_power_w") or tel.get("pv_power"),
+                "mppt1_power": extra.get("mppt1_power"),
+                "mppt2_power": extra.get("mppt2_power"),
+                "load_power_w": tel.get("load_power_w") or tel.get("phase_r_watt_of_load"),
+                "batt_power_w": tel.get("batt_power_w") or tel.get("battery_power"),
+                "grid_power_w": tel.get("grid_power_w") or tel.get("phase_r_watt_of_grid"),
+                
+                # Battery data
+                "batt_soc_pct": tel.get("batt_soc_pct") or tel.get("battery_soc"),
+                "batt_voltage_v": tel.get("batt_voltage_v") or extra.get("battery_voltage"),
+                "batt_current_a": tel.get("batt_current_a") or extra.get("battery_current"),
+                "batt_temp_c": extra.get("battery_temperature"),
+                
+                # Inverter data
+                "inverter_mode": tel.get("inverter_mode") or tel.get("hybrid_work_mode"),
+                "inverter_temp_c": tel.get("inverter_temp_c") or extra.get("inner_temperature"),
+                "error_code": extra.get("error_code"),
+                
+                # Device info
+                "device_model": extra.get("device_model"),
+                "device_serial_number": extra.get("device_serial_number"),
+                "rated_power": extra.get("rated_power"),
+                
+                # Energy totals
+                "today_energy": extra.get("today_energy"),
+                "total_energy": extra.get("total_energy"),
+                "today_peak_power": extra.get("today_peak_power"),
+                "today_load_energy": extra.get("today_load_energy"),
+                "today_import_energy": extra.get("today_import_energy"),
+                "today_export_energy": extra.get("today_export_energy"),
+                
+                # Configuration
+                "grid_charge": extra.get("grid_charge"),
+                "maximum_grid_charger_power": extra.get("maximum_grid_charger_power"),
+                "maximum_charger_power": extra.get("maximum_charger_power"),
+                "maximum_discharger_power": extra.get("maximum_discharger_power"),
+                "off_grid_mode": extra.get("off_grid_mode"),
+                "off_grid_start_up_battery_capacity": extra.get("off_grid_start_up_battery_capacity"),
+                
+                # TOU Windows
+                "charge_start_time_1": extra.get("charge_start_time_1"),
+                "charge_end_time_1": extra.get("charge_end_time_1"),
+                "charge_power_1": extra.get("charge_power_1"),
+                "charger_end_soc_1": extra.get("charger_end_soc_1"),
+                "discharge_start_time_1": extra.get("discharge_start_time_1"),
+                "discharge_end_time_1": extra.get("discharge_end_time_1"),
+                "discharge_power_1": extra.get("discharge_power_1"),
+                "discharge_end_soc_1": extra.get("discharge_end_soc_1"),
+            }
+            return {"inverter_id": inverter_id, "now": normalized}
+            
+        except Exception as e:
+            log.error(f"Error in /api/now: {e}", exc_info=True)
+            return {
+                "inverter_id": inverter_id,
+                "now": None,
+                "error": str(e)
+            }
+
+    @app.get("/api/forecast")
+    def api_forecast(inverter_id: str = "senergy1") -> Dict[str, Any]:
+        """Get PV forecast data for today from smart scheduler."""
+        try:
+            log.info(f"API /api/forecast called for inverter_id: {inverter_id}")
+            # Try to get real forecast data from smart scheduler
+            if solar_app.smart and hasattr(solar_app.smart, 'weather'):
+                import asyncio
+                import pandas as pd
+                
+                # Get current time in the scheduler's timezone
+                tznow = pd.Timestamp.now(solar_app.smart.tz)
+                
+                # Get weather factors and enhanced forecast
+                try:
+                    # Run async function in sync context
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Get weather factors
+                    factors = loop.run_until_complete(solar_app.smart.weather.day_factors())
+                    
+                    # Get enhanced forecast if available
+                    enhanced_forecast = None
+                    if hasattr(solar_app.smart.weather, 'get_enhanced_forecast'):
+                        enhanced_forecast = loop.run_until_complete(solar_app.smart.weather.get_enhanced_forecast(days=1))
+                    
+                    loop.close()
+                    
+                    # Generate hourly forecast data
+                    data = []
+                    today_str = tznow.strftime('%Y-%m-%d')
+                    today_weather = enhanced_forecast.get(today_str) if enhanced_forecast else None
+                    
+                    # Get PV estimators for the inverter
+                    inverter_estimators = solar_app.smart.inv_estimators.get(inverter_id, [])
+                    
+                    for hour in range(6, 19):  # 6 AM to 6 PM
+                        time_str = f"{hour:02d}:00"
+                        
+                        # Calculate solar position factor (simplified)
+                        import math
+                        hour_of_day = hour - 6
+                        solar_factor = math.sin((hour_of_day / 12) * math.pi) if hour_of_day >= 0 else 0
+                        
+                        # Get forecast from estimators
+                        predicted_power = 0
+                        for estimator in inverter_estimators:
+                            if hasattr(estimator, 'estimate_hourly_pv_kw'):
+                                try:
+                                    hourly_kw = estimator.estimate_hourly_pv_kw(
+                                        hour, factors.get("today", 1.0), enhanced_weather=today_weather
+                                    )
+                                    predicted_power += hourly_kw * 1000  # Convert to watts
+                                except:
+                                    # Fallback to simple calculation
+                                    predicted_power += 5000 * solar_factor * factors.get("today", 1.0)
+                            else:
+                                # Fallback calculation
+                                predicted_power += 5000 * solar_factor * factors.get("today", 1.0)
+                        
+                        # Get actual generation if available
+                        actual_power = 0
+                        if hour <= tznow.hour:
+                            # Get current telemetry for actual data
+                            tel = solar_app.get_now(inverter_id)
+                            if tel and hour == tznow.hour:
+                                actual_power = tel.get("pv_power_w", 0)
+                            # For past hours, we could query the database, but for now use 0
+                        
+                        # Get cloud cover from enhanced weather if available
+                        cloud_cover = 20  # Default
+                        if today_weather and 'hourly' in today_weather:
+                            hourly_data = today_weather['hourly']
+                            if hour < len(hourly_data):
+                                cloud_cover = hourly_data[hour].get('cloud_cover', 20)
+                        
+                        data.append({
+                            "time": time_str,
+                            "generated": round(actual_power),
+                            "predicted": round(predicted_power),
+                            "cloudCover": round(cloud_cover)
+                        })
+                    
+                    return {
+                        "inverter_id": inverter_id, 
+                        "forecast": data,
+                        "weather_factor": factors.get("today", 1.0),
+                        "source": "smart_scheduler"
+                    }
+                    
+                except Exception as inner_e:
+                    log.error(f"Error in forecast calculation: {inner_e}")
+                    import traceback
+                    log.error(f"Traceback: {traceback.format_exc()}")
+                    # Fall back to mock data - this will be handled by the outer fallback
+                    pass
+                    
+        except Exception as e:
+            log.error(f"Error getting smart scheduler forecast: {e}")
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
+            # Fall back to mock data
+            pass
+        
+        # Fallback to mock data if smart scheduler is not available
+        import random
+        from datetime import datetime, timedelta
+        
+        data = []
+        now = datetime.now()
+        start_hour = 6
+        end_hour = 18
+        
+        for hour in range(start_hour, end_hour + 1):
+            time_str = f"{hour:02d}:00"
+            hour_of_day = hour - start_hour
+            max_power = 20000
+            
+            # Generate realistic solar curve
+            import math
+            solar_factor = math.sin((hour_of_day / (end_hour - start_hour)) * math.pi)
+            generated = max(0, solar_factor * max_power * 0.7)
+            predicted = max(0, solar_factor * max_power * 0.85)
+            cloud_cover = random.uniform(10, 40)
+            
+            data.append({
+                "time": time_str,
+                "generated": round(generated),
+                "predicted": round(predicted),
+                "cloudCover": round(cloud_cover)
+            })
+        
+        return {"inverter_id": inverter_id, "forecast": data, "source": "mock"}
+
+    @app.get("/api/overview")
+    def api_overview(inverter_id: str = "senergy1", hours: int = 24) -> Dict[str, Any]:
+        """Get overview data for the last N hours from database."""
+        try:
+            log.info(f"API /api/overview called for inverter_id: {inverter_id}, hours: {hours}")
+            if solar_app.logger and hasattr(solar_app.logger, 'path'):
+                import sqlite3
+                from datetime import datetime, timedelta
+                
+                # Calculate time range
+                end_time = datetime.now()
+                start_time = end_time - timedelta(hours=hours)
+                
+                # Query database for historical data
+                conn = sqlite3.connect(solar_app.logger.path)
+                cursor = conn.cursor()
+                
+                query = """
+                SELECT 
+                    ts,
+                    pv_power_w,
+                    load_power_w,
+                    soc,
+                    batt_voltage_v,
+                    batt_current_a,
+                    grid_power_w
+                FROM energy_samples 
+                WHERE ts >= ? AND ts <= ?
+                AND (pv_power_w IS NOT NULL OR load_power_w IS NOT NULL OR grid_power_w IS NOT NULL)
+                ORDER BY ts
+                """
+                
+                cursor.execute(query, (start_time.isoformat(), end_time.isoformat()))
+                rows = cursor.fetchall()
+                conn.close()
+                
+                # Process data into hourly buckets
+                hourly_data = {}
+                for row in rows:
+                    ts_str, site_pv_kw, site_load_kw, battery_soc_pct, battery_power_kw, grid_power_kw = row
+                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                    hour_key = ts.strftime('%H:00')
+                    
+                    if hour_key not in hourly_data:
+                        hourly_data[hour_key] = {
+                            'solar': [],
+                            'load': [],
+                            'battery': [],
+                            'grid': []
+                        }
+                    
+                    # Convert kW to W and collect data
+                    if site_pv_kw is not None:
+                        hourly_data[hour_key]['solar'].append(site_pv_kw * 1000)
+                    if site_load_kw is not None:
+                        hourly_data[hour_key]['load'].append(site_load_kw * 1000)
+                    if battery_power_kw is not None:
+                        hourly_data[hour_key]['battery'].append(battery_power_kw * 1000)
+                    if grid_power_kw is not None:
+                        hourly_data[hour_key]['grid'].append(grid_power_kw * 1000)
+                
+                # Calculate average power for each hour
+                data = []
+                for hour in range(24):
+                    hour_str = f"{hour:02d}:00"
+                    if hour_str in hourly_data:
+                        hour_data = hourly_data[hour_str]
+                        avg_solar = sum(hour_data['solar']) / len(hour_data['solar']) if hour_data['solar'] else 0
+                        avg_load = sum(hour_data['load']) / len(hour_data['load']) if hour_data['load'] else 0
+                        avg_battery = sum(hour_data['battery']) / len(hour_data['battery']) if hour_data['battery'] else 0
+                        avg_grid = sum(hour_data['grid']) / len(hour_data['grid']) if hour_data['grid'] else 0
+                        
+                        data.append({
+                            "time": hour_str,
+                            "solar": round(avg_solar),
+                            "load": round(avg_load),
+                            "battery": round(avg_battery),
+                            "grid": round(avg_grid)
+                        })
+                    else:
+                        # No data for this hour, use zeros
+                        data.append({
+                            "time": hour_str,
+                            "solar": 0,
+                            "load": 0,
+                            "battery": 0,
+                            "grid": 0
+                        })
+                
+                return {
+                    "inverter_id": inverter_id,
+                    "overview": data,
+                    "source": "database"
+                }
+                
+        except Exception as e:
+            log.error(f"Error getting overview data from database: {e}")
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Fallback to mock data if database is not available
+        import random
+        from datetime import datetime, timedelta
+        
+        data = []
+        now = datetime.now()
+        
+        for i in range(hours):
+            time = now - timedelta(hours=hours-1-i)
+            hour = time.hour
+            time_str = time.strftime("%H:%M")
+            
+            # Solar generation (only during daylight hours)
+            solar = 0
+            if 6 <= hour <= 18:
+                hour_of_day = hour - 6
+                max_power = 10000
+                import math
+                solar_factor = math.sin((hour_of_day / 12) * math.pi)
+                solar = max(0, solar_factor * max_power)
+            
+            # Load consumption
+            load = 2000
+            if 6 <= hour <= 22:
+                load += random.uniform(1000, 4000)
+            else:
+                load += random.uniform(0, 500)
+            
+            # Battery power
+            battery = 0
+            if solar > load:
+                battery = min(solar - load, 3000)
+            elif solar < load:
+                battery = max(solar - load, -5000)
+            
+            # Grid power
+            grid = load - solar - battery
+            
+            data.append({
+                "time": time_str,
+                "solar": round(solar),
+                "load": round(load),
+                "battery": round(battery),
+                "grid": round(grid)
+            })
+        
+        return {"inverter_id": inverter_id, "overview": data, "source": "mock"}
+
+    @app.get("/api/solar-history")
+    def api_solar_history(inverter_id: str = "senergy1", hours: int = 24) -> Dict[str, Any]:
+        """Get historical solar generation data from database."""
+        try:
+            log.info(f"API /api/solar-history called for inverter_id: {inverter_id}, hours: {hours}")
+            if solar_app.logger and hasattr(solar_app.logger, 'path'):
+                import sqlite3
+                from datetime import datetime, timedelta
+                
+                # Calculate time range
+                end_time = datetime.now()
+                start_time = end_time - timedelta(hours=hours)
+                
+                # Query database for solar generation data
+                conn = sqlite3.connect(solar_app.logger.path)
+                cursor = conn.cursor()
+                
+                query = """
+                SELECT 
+                    ts,
+                    pv_power_w
+                FROM energy_samples 
+                WHERE ts >= ? AND ts <= ?
+                AND pv_power_w IS NOT NULL
+                ORDER BY ts
+                """
+                
+                cursor.execute(query, (start_time.isoformat(), end_time.isoformat()))
+                rows = cursor.fetchall()
+                conn.close()
+                
+                # Process data into hourly buckets
+                hourly_data = {}
+                for row in rows:
+                    ts_str, pv_power_w = row
+                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                    hour_key = ts.strftime('%H:00')
+                    
+                    # Convert pv_power_w to kW
+                    power_kw = pv_power_w / 1000.0 if pv_power_w else 0
+                    
+                    if hour_key not in hourly_data:
+                        hourly_data[hour_key] = []
+                    hourly_data[hour_key].append(power_kw)
+                
+                # Calculate average power for each hour
+                data = []
+                for hour in range(24):
+                    hour_str = f"{hour:02d}:00"
+                    if hour_str in hourly_data:
+                        avg_power = sum(hourly_data[hour_str]) / len(hourly_data[hour_str])
+                        data.append({
+                            "time": hour_str,
+                            "power": round(avg_power * 1000, 0)  # Convert back to watts
+                        })
+                    else:
+                        data.append({
+                            "time": hour_str,
+                            "power": 0
+                        })
+                
+                return {
+                    "inverter_id": inverter_id,
+                    "solar_history": data,
+                    "source": "database"
+                }
+                
+        except Exception as e:
+            log.error(f"Error getting solar history from database: {e}")
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Fallback to mock data
+        import random
+        from datetime import datetime
+        
+        data = []
+        for hour in range(24):
+            hour_str = f"{hour:02d}:00"
+            # Generate realistic solar curve
+            if 6 <= hour <= 18:
+                import math
+                hour_of_day = hour - 6
+                solar_factor = math.sin((hour_of_day / 12) * math.pi)
+                power = max(0, solar_factor * 10000 * random.uniform(0.7, 1.0))
+            else:
+                power = 0
+            
+            data.append({
+                "time": hour_str,
+                "power": round(power)
+            })
+        
+        return {
+            "inverter_id": inverter_id,
+            "solar_history": data,
+            "source": "mock"
+        }
+
+    return app
+
+
+def start_api_in_background(fastapi_app: FastAPI, host: str, port: int) -> None:
+    """Start a uvicorn server in a background daemon thread."""
+    try:
+        # Configure uvicorn to use the main application's logger
+        import logging
+        uvicorn_logger = logging.getLogger("uvicorn")
+        uvicorn_logger.setLevel(logging.INFO)
+        
+        # Add a handler to capture uvicorn logs in the main application
+        if not uvicorn_logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            uvicorn_logger.addHandler(handler)
+        
+        config = uvicorn.Config(
+            fastapi_app, 
+            host=host, 
+            port=port, 
+            log_level="info",
+            access_log=True,
+            use_colors=False,
+            log_config=None  # Disable uvicorn's default logging config
+        )
+        server = uvicorn.Server(config)
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        log.info(f"API server thread started on {host}:{port}")
+    except Exception as e:
+        log.error(f"Error starting API server: {e}", exc_info=True)
+

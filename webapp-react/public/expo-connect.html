@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expo Go Connection Helper - Solar Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .qr-container {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        #qrcode {
+            display: inline-block;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .url-display {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            text-align: center;
+            border: 2px dashed #667eea;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #2196F3;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #1976D2;
+        }
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+        .note {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .note strong {
+            color: #856404;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 30px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Expo Go Connection Helper</h1>
+        <p class="subtitle">Connect to Solar Monitoring Mobile App</p>
+        
+        <div class="instructions">
+            <h3>How to Connect:</h3>
+            <ol>
+                <li>Make sure Expo development server is running on the server</li>
+                <li>Open Expo Go app on your phone</li>
+                <li>Tap the "Scan QR Code" button in Expo Go</li>
+                <li>Scan the QR code below</li>
+                <li>The app will load and connect to your solar monitoring system</li>
+            </ol>
+        </div>
+
+        <div class="qr-container">
+            <div id="qrcode"></div>
+        </div>
+
+        <div class="url-display" id="urlDisplay"></div>
+
+        <div class="note">
+            <strong>Note:</strong> Make sure your phone and server are on the same network, 
+            and that port 8081 is accessible from your phone. If connection fails, 
+            check that the Expo development server is running.
+        </div>
+
+        <a href="/" class="back-link">← Back to Solar Monitoring Dashboard</a>
+    </div>
+
+    <script>
+        const STATIC_IP = '182.180.150.107';
+        const PORT = '8081';
+        const connectionUrl = `exp://${STATIC_IP}:${PORT}`;
+
+        // Display the URL
+        document.getElementById('urlDisplay').textContent = connectionUrl;
+
+        // Generate QR code
+        new QRCode(document.getElementById('qrcode'), {
+            text: connectionUrl,
+            width: 256,
+            height: 256,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,136 @@
+mqtt:
+  host: 192.168.88.18
+  port: 1883
+  base_topic: solar/fleet
+  client_id: solar-hub
+  ha_discovery: true
+
+polling:
+  interval_secs: 5
+
+smart:
+  forecast:
+    enabled: true
+    provider: openmeteo     # naive | openmeteo
+    lat: 31.5204
+    lon: 74.3587
+    tz: Asia/Karachi
+    pv_dc_kw: 12.0          # default site-wide; per-inverter overrides in 'solar' section
+    pv_perf_ratio: 0.8
+    tilt_deg: 20
+    azimuth_deg: 180
+    albedo: 0.2
+    batt_capacity_kwh: 28.0
+  policy:
+    enabled: true
+    target_full_before_sunset: true
+    overnight_min_soc_pct: 30
+    conserve_on_bad_tomorrow: true
+    smart_tick_interval_secs: 30 # Smart scheduler runs every 5 minutes (30s to 1h range)
+    
+    # Battery power and SOC limits
+    max_charge_power_w: 5000  # Max battery charge power in watts
+    max_discharge_power_w: 5000  # Max battery discharge power in watts
+    max_battery_soc_pct: 100  # Max battery SOC for charging
+    
+    # Tariff configuration for smart scheduling
+    tariffs:
+      # Cheap overnight charging (highest priority)
+      - kind: cheap
+        start: "23:00"
+        end: "06:00"
+        price: 1.5
+        allow_grid_charge: true
+        allow_discharge: false
+        priority: 1
+        
+      # Normal daytime (PV should handle most)
+      - kind: normal
+        start: "06:00"
+        end: "17:00"
+        price: 1.0
+        allow_grid_charge: true
+        allow_discharge: true
+        priority: 2
+        
+      # Peak evening (discharge battery to avoid expensive grid)
+      - kind: peak
+        start: "17:00"
+        end: "23:00"
+        price: 3.0
+        allow_grid_charge: false
+        allow_discharge: true
+        priority: 3
+        peak_shaving_enabled: true
+    
+          # Mode switching configuration
+          primary_mode: self_use  # Primary mode: self_use or time_based
+          enable_auto_mode_switching: true  # Enable automatic mode switching based on conditions
+          solar_target_threshold_pct: 85  # Solar target achievement threshold for mode switching
+          poor_weather_threshold_kwh: 1.0  # Poor weather threshold for discharge control
+          close_to_target_threshold_pct: 5  # SOC threshold for considering battery close to target (use self-use mode)
+
+inverters:
+  - id: senergy1
+    name: East Roof
+    adapter:
+      type: senergy
+      transport: rtu
+      unit_id: 1
+      serial_port: /dev/ttyUSB0
+      baudrate: 9600
+      parity: N
+      stopbits: 1
+      bytesize: 8
+      register_map_file: register_maps/senergy_registers.json
+    safety:
+      max_batt_voltage_v: 58.8
+      max_charge_a: 100
+      max_discharge_a: 100
+    solar:
+      - pv_dc_kw: 3.0
+        tilt_deg: 15
+        azimuth_deg: 110
+        perf_ratio: 0.82
+        albedo: 0.2
+      - pv_dc_kw: 3.0
+        tilt_deg: 25
+        azimuth_deg: 120
+        perf_ratio: 0.8
+        albedo: 0.2
+      tilt_deg: 15
+      azimuth_deg: 110
+      perf_ratio: 0.82
+      albedo: 0.2
+
+  - id: senergy2
+    name: West Roof
+    adapter:
+      type: senergy
+      transport: rtu
+      unit_id: 2
+      serial_port: /dev/ttyUSB0
+      baudrate: 9600
+      parity: N
+      stopbits: 1
+      bytesize: 8
+      register_map_file: register_maps/senergy_registers.json
+    safety:
+      max_batt_voltage_v: 58.8
+      max_charge_a: 100
+      max_discharge_a: 100
+    solar:
+      - pv_dc_kw: 4.8
+        tilt_deg: 20
+        azimuth_deg: 250
+        perf_ratio: 0.8
+        albedo: 0.2
+      - pv_dc_kw: 4.8
+        tilt_deg: 22
+        azimuth_deg: 240
+        perf_ratio: 0.8
+        albedo: 0.2
+      tilt_deg: 20
+      azimuth_deg: 250
+      perf_ratio: 0.80
+      albedo: 0.2

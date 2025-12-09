@@ -1,0 +1,92 @@
+# Solar Monitoring System - Python Dependencies
+# Python 3.11+ required
+#
+# Installation:
+#   python3.11 -m venv venv
+#   source venv/bin/activate  # Linux/macOS
+#   venv\Scripts\activate      # Windows
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+
+# ============================================================================
+# Core Framework & API
+# ============================================================================
+
+# FastAPI - Modern web framework for building APIs
+fastapi>=0.104.0,<0.115.0
+
+# Uvicorn - ASGI server for FastAPI (with standard extras for better performance)
+uvicorn[standard]>=0.24.0,<0.32.0
+
+# Pydantic - Data validation using Python type annotations
+pydantic==2.11.7
+
+# Python multipart - Required for FastAPI file uploads and form data
+python-multipart>=0.0.6,<0.1.0
+
+# ============================================================================
+# Modbus Communication
+# ============================================================================
+
+# PyModbus - Modbus RTU/TCP client library for inverter communication
+pymodbus==3.11.2
+
+# PySerial - Serial port communication (required for Modbus RTU)
+pyserial>=3.5,<4.0
+
+# Bleak - Bluetooth Low-Energy (BLE) support (required for jkbms_ble adapter)
+bleak>=0.20.0,<0.21.0
+
+# ============================================================================
+# MQTT Communication
+# ============================================================================
+
+# Paho MQTT - MQTT client library for Home Assistant integration and messaging
+paho-mqtt==1.6.1
+
+# ============================================================================
+# Async & HTTP
+# ============================================================================
+
+# uvloop - Fast event loop implementation (drop-in replacement for asyncio)
+uvloop>=0.21.0,<0.22.0
+
+# aiohttp - Async HTTP client/server library
+aiohttp>=3.12.15,<4.0.0
+
+# ============================================================================
+# Data Processing & Analysis
+# ============================================================================
+
+# NumPy - Fundamental package for numerical computing
+numpy>=1.26.0,<2.0.0
+
+# Pandas - Data manipulation and analysis library
+pandas>=2.2.0,<3.0.0
+
+# ============================================================================
+# Solar & Weather Forecasting
+# ============================================================================
+
+# pvlib - Photovoltaic system modeling library for solar forecasting
+pvlib>=0.10.0,<1.0.0
+
+# ============================================================================
+# Configuration & Data Formats
+# ============================================================================
+
+# PyYAML - YAML parser and emitter for configuration files
+pyyaml==6.0.2
+
+# ============================================================================
+# Date & Time Handling
+# ============================================================================
+
+# python-dateutil - Powerful extensions to the standard datetime module
+python-dateutil>=2.8.2,<3.0.0
+
+# pytz - World timezone definitions (legacy, but still used by some dependencies)
+pytz>=2023.3,<2025.0
+
+# tzdata - Timezone database (Python 3.9+ uses this instead of pytz)
+tzdata>=2023.3,<2025.0

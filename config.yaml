@@ -1,0 +1,338 @@
+# System timezone configuration
+timezone: Asia/Karachi
+
+# Home configuration (top-level container)
+home:
+  id: home
+  name: "My Solar Home"
+  description: "Main residential solar system"
+
+mqtt:
+  host: 192.168.88.18
+  port: 1883
+  base_topic: solar/fleet
+  client_id: solar-hub
+  ha_discovery: true
+
+polling:
+  interval_secs: 5
+
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  ha_debug: true  # Enable debug logging for Home Assistant messages
+
+# Device discovery configuration
+discovery:
+  enabled: false  # Enable automatic USB device discovery
+  scan_on_startup: true  # Run discovery scan on application startup
+  scan_interval_minutes: 60  # Periodic re-scan interval in minutes
+  priority_order:  # Device type priority order for discovery
+    - pytes
+    - senergy
+    - powdrive
+    - iammeter
+  identification_timeout: 2.0  # Timeout for device identification in seconds
+  max_retries: 2  # Maximum retries per device type during discovery
+  initial_retry_minutes: 15  # Initial retry delay for failed devices in minutes
+  max_retry_minutes: 120  # Maximum retry delay in minutes
+  backoff_multiplier: 1.5  # Exponential backoff multiplier
+  max_failures: 10  # Maximum consecutive failures before permanent disable
+
+smart:
+  forecast:
+    enabled: true
+    provider: openweather     # naive | openmeteo | weatherapi | openweather | simple
+    lat: 31.5497
+    lon: 74.3436
+    # API Keys for weather providers (optional - can also be stored in database)
+    weatherapi_key: "d7fe72e959214b72ae1120009252209"  # Get free key from weatherapi.com
+    openweather_key: "8b3c3b9e82005cd0a0a3e2363cc26086"  # Get free key from openweathermap.org
+    weatherbit_key: "d6fbba485f78495baba7b8dac9d96d65"   # Get free key from weatherbit.io
+    batt_capacity_kwh: 20
+  policy:
+    enabled: false
+    # SOC & safety (optimized for critical loads)
+    overnight_min_soc_pct: 35  # Slightly higher since loads are critical
+    blackout_reserve_soc_pct: 30  # Your external load shedding kicks in at 30%
+    target_full_before_sunset: true
+
+    # Battery optimization settings
+    dynamic_soc_enabled: true
+    min_self_sufficiency_pct: 85.0  # Minimum target
+    target_self_sufficiency_pct: 95.0  # Ideal target
+    max_grid_usage_kwh_per_day: 3.0  # Maximum daily grid usage
+    emergency_reserve_hours: 6.0  # 6 hours reserve since loads are critical
+    smart_tick_interval_secs: 300  # Smart scheduler runs every 5 minutes (30s to 1h range)
+    # Battery power and SOC limits
+    max_charge_power_w: 3000  # Max battery charge power in watts
+    max_discharge_power_w: 5000  # Max battery discharge power in watts
+    max_battery_soc_pct: 98  # Max battery SOC for charging
+    # Optional global cap for grid charger (model limit). Adapter will further cap by Imax*Vbat.
+    max_grid_charge_w: 2000
+    # Mode switching configuration
+    primary_mode: self_use  # Primary mode: self_use or time_based
+    enable_auto_mode_switching: true  # Enable automatic mode switching based on conditions
+    solar_target_threshold_pct: 85  # Solar target achievement threshold for mode switching
+    poor_weather_threshold_kwh: 1.0  # Poor weather threshold for discharge control
+    close_to_target_threshold_pct: 5  # SOC threshold for considering battery close to target (use self-use mode)
+
+    # Enhanced tariff windows for better optimization
+    tariffs:
+      # Cheap overnight charging (highest priority)
+      - kind: cheap
+        start: "22:00"
+        end: "05:00"
+        price: 1.5
+        allow_grid_charge: true
+        allow_discharge: false
+        priority: 1
+        
+      # Normal daytime (PV should handle most)
+      - kind: normal
+        start: "05:00"
+        end: "17:00"
+        price: 1
+        allow_grid_charge: true
+        allow_discharge: true
+        priority: 2
+        
+      # Peak evening (discharge battery to avoid expensive grid)
+      - kind: peak
+        start: "17:00"
+        end: "22:00"
+        price: 3.0
+        allow_grid_charge: false
+        allow_discharge: true
+        priority: 3
+        peak_shaving_enabled: true
+
+# Arrays of Inverters (logical groups of inverters)
+arrays:
+  - id: array1
+    name: "Ground Floor"
+    inverter_ids:
+      - powdrive2
+      - senergy1
+  
+  - id: array2
+    name: "First Floor"
+    inverter_ids:
+      - powdrive1
+
+inverters:
+  - id: powdrive1
+    name: Powdrive
+    array_id: array2  # Assign to Array 2
+    adapter:
+      type: powdrive
+      transport: rtu
+      unit_id: 1
+      serial_port: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_BDCSe11BS13-if00-port0
+      baudrate: 9600
+      parity: N
+      stopbits: 1
+      bytesize: 8
+      register_map_file: register_maps/powdrive_registers.json
+    safety:
+      max_batt_voltage_v: 52
+      max_charge_a: 100
+      max_discharge_a: 100
+    solar:
+      - pv_dc_kw: 13.2
+        tilt_deg: 28
+        azimuth_deg: 180
+        perf_ratio: 0.82
+        albedo: 0.2
+
+
+   #Senergy Inverter - TCP (Network) Example
+  - id: senergy1
+    name: Senergy
+    array_id: array1  # Assign to Array 1
+    adapter:
+      type: senergy
+      transport: tcp
+      unit_id: 4
+      host: 192.168.88.48  # Inverter IP address
+      port: 5021           # Modbus TCP port (default: 502)
+      register_map_file: register_maps/senergy_registers.json
+      safety:
+        max_batt_voltage_v: 52
+        max_charge_a: 100
+        max_discharge_a: 100
+      solar:
+        - pv_dc_kw: 5.8
+          tilt_deg: 28
+          azimuth_deg: 180
+          perf_ratio: 0.82
+          albedo: 0.2
+
+  - id: powdrive2
+    name: Powdrive
+    array_id: array1  # Assign to Array 1
+    adapter:
+      type: powdrive
+      transport: rtu
+      unit_id: 1
+      serial_port: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CVCLe12CJ06-if00-port0
+      baudrate: 9600
+      parity: N
+      stopbits: 1
+      bytesize: 8
+      register_map_file: register_maps/powdrive_registers.json
+    safety:
+      max_batt_voltage_v: 52
+      max_charge_a: 100
+      max_discharge_a: 100
+    solar:
+      - pv_dc_kw: 15.4
+        tilt_deg: 28
+        azimuth_deg: 180
+        perf_ratio: 0.82
+        albedo: 0.2
+
+        
+# Energy meters configuration (grid meters, consumption meters, etc.)
+# IAMMeter devices monitor grid connection and provide import/export data
+meters:
+  - id: grid_meter_1
+    name: IAMMeter
+    array_id: home  # Attach to home (measures total consumption across all arrays)
+    adapter:
+      type: iammeter
+      transport: tcp
+      host: 192.168.88.23  # IAMMeter device IP address
+      port: 502            # Modbus TCP port (default: 502)
+      unit_id: 1           # Modbus unit ID (default: 1)
+      prefer_legacy_registers: true  # If true, reads legacy registers (0-36) first, then falls back to extended (72-120) if legacy values are zero. If false (default), reads extended first.
+      # Optional: Custom register addresses (if different from defaults)
+      # voltage_register: 0x0000
+      # voltage_scale: 10
+      # current_register: 0x0001
+      # current_scale: 100
+      # power_register: 0x0002
+      # energy_register: 0x0004
+      # energy_scale: 1000
+      # frequency_register: 0x0006
+      # frequency_scale: 100
+      # power_factor_register: 0x0007
+      # power_factor_scale: 1000
+      # register_map_file: register_maps/iammeter_registers.json  # Optional: Custom register map file
+
+# Choose which source provides battery metrics for UI/scheduler: "inverter" or "battery_adapter"
+battery_data_source: battery_adapter
+
+# Optional external battery banks (read directly from batteries)
+# New structure: battery_banks (list) - supports multiple banks simultaneously
+battery_banks:
+  # Pytes Battery Configuration
+  - id: battery1
+    name: Pylontech Battery Bank
+    adapter:
+      type: pytes
+      serial_port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A9U593Y5-if00-port0   # e.g. COM3 on Windows
+      baudrate: 115200
+      parity: N
+      stopbits: 1
+      bytesize: 8
+      batteries: 4               # number of batteries in the bank
+      cells_per_battery: 15
+      dev_name: pytes
+      manufacturer: PYTES Energy Co.Ltd
+      model: USP5000
+
+  # JK BMS Configuration - Failover Adapter (Modbus RTU/TCP/IP Primary + Bluetooth Secondary)
+  - id: jkbms_bank_ble
+    name: EVE Battery Bank
+    adapters:
+      # Primary adapter: Modbus RTU via TCP/IP Gateway
+      - adapter:
+          type: jkbms_tcpip
+          connection_type: tcpip  # Use TCP/IP gateway (or "rtu" for direct serial)
+          host: 192.168.88.48  # RS485 gateway IP address
+          port: 5022  # RS485 gateway TCP port
+          batteries: 3  # Number of batteries
+          cells_per_battery: 16  # Cells per pack (16 cells each, 3.2V nominal)
+          bms_broadcasting: true  # REQUIRED: Must be true for passive listening mode
+          poll_timeout: 2.0  # How long to listen per poll (seconds)
+          dev_name: jkbms
+          manufacturer: JK BMS
+          model: JK-PB2A16S20P
+        priority: 1  # Primary adapter (lower number = higher priority)
+        enabled: true
+     
+      
+      # Secondary adapter: Bluetooth Low-Energy (failover)
+      - adapter:
+          type: jkbms_ble  # Bluetooth Low-Energy adapter
+          bt_addresses:  # List of Bluetooth MAC addresses (one per battery)
+            - "C8:47:80:1A:1F:04"  # Battery 1 MAC address
+            - "C8:47:80:1A:83:CE"  # Battery 2 MAC address
+            - "C8:47:80:1A:55:25"  # Battery 3 MAC address
+          bt_adapter: "hci0"  # Bluetooth adapter name (optional, applies to all batteries)
+          bt_pin: null  # Bluetooth pairing PIN (optional, applies to all batteries)
+          bt_keep_alive: true  # Keep connection alive between reads (recommended)
+          bt_timeout: 8.0  # Connection timeout in seconds
+          batteries: 3  # Number of batteries (must match number of MAC addresses)
+          cells_per_battery: 16  # Cells per pack (16 cells each, 3.2V nominal)
+          dev_name: jkbms
+          manufacturer: JK BMS
+          model: JK-PB2A16S20P
+        priority: 2  # Secondary adapter (failover)
+        enabled: true
+
+# Arrays of Battery Banks (groups multiple battery banks)
+battery_bank_arrays:
+  - id: battery_array1
+    name: "Ground Floor Battery Array"
+    battery_bank_ids: 
+      - jkbms_bank_ble
+      #- jkbms_bank
+  
+  - id: battery_array2
+    name: "First Floor Battery Array"
+    battery_bank_ids:
+      - battery1
+
+# Attach Battery Bank Arrays to Inverter Arrays (1:1 relationship)
+battery_bank_array_attachments:
+  - battery_bank_array_id: battery_array1
+    inverter_array_id: array1
+    attached_since: "2025-01-01T00:00:00+05:00"
+    detached_at: null  # null = active attachment
+  
+  - battery_bank_array_id: battery_array2
+    inverter_array_id: array2
+    attached_since: "2025-01-01T00:00:00+05:00"
+    detached_at: null  # null = active attachment
+
+
+# Billing & Capacity Analysis Configuration
+billing:
+  currency: PKR
+  anchor_day: 16  # Billing cycle starts on 15th of each month
+  
+  # Energy prices (per kWh)
+  price_offpeak_import: 50.0  # Price for off-peak grid import
+  price_peak_import: 60.0      # Price for peak hour grid import
+  
+  # Settlement prices (for credits at end of 3-month cycle)
+  price_offpeak_settlement: 22.0  # Settlement price for off-peak export credits
+  price_peak_settlement: 22.0     # Settlement price for peak export credits
+  
+  # Fixed charges
+  fixed_charge_per_billing_month: 1000.0  # Fixed monthly charge (meter rent, service fee, etc.)
+  fixed_proration: none  # Fixed charge proration: 'none' | 'linear_by_day'
+  
+  # Peak time-of-use windows (24-hour format HH:MM)
+  peak_windows:
+    - start: "17:00"
+      end: "22:00"
+  
+  # Forecasting defaults
+  forecast:
+    default_method: trend  # 'trend' | 'seasonal'
+    lookback_months: 12    # Number of months to look back for trend analysis
+    default_months_ahead: 1 # Default forecast horizon
+    low_confidence_threshold: 0.5  # Confidence threshold for warnings

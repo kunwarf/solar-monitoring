@@ -1,0 +1,50 @@
+# Solar Monitoring System - Development Dependencies
+# Includes all production dependencies plus development and testing tools
+#
+# Installation:
+#   python3.11 -m venv venv
+#   source venv/bin/activate  # Linux/macOS
+#   venv\Scripts\activate      # Windows
+#   pip install --upgrade pip
+#   pip install -r requirements-dev.txt
+
+# Include all production dependencies
+-r requirements.txt
+
+# ============================================================================
+# Testing Framework
+# ============================================================================
+
+# pytest - Testing framework
+pytest>=7.0.0,<8.0.0
+
+# pytest-asyncio - Pytest plugin for testing asyncio code
+pytest-asyncio>=0.21.0,<0.25.0
+
+# pytest-mock - Thin wrapper around unittest.mock for easier mocking
+pytest-mock>=3.10.0,<4.0.0
+
+# pytest-cov - Coverage plugin for pytest
+pytest-cov>=4.0.0,<6.0.0
+
+# ============================================================================
+# Code Quality & Formatting
+# ============================================================================
+
+# black - Uncompromising code formatter
+black>=23.0.0,<25.0.0
+
+# flake8 - Linting tool for style guide enforcement
+flake8>=6.0.0,<8.0.0
+
+# mypy - Static type checker
+mypy>=1.0.0,<2.0.0
+
+# ============================================================================
+# Additional Testing Utilities
+# ============================================================================
+
+# unittest-mock - Mocking library (backport for older Python versions if needed)
+# Note: unittest.mock is part of standard library in Python 3.3+
+# This is included for compatibility, but may not be needed
+

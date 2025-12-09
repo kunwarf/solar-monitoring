@@ -1,0 +1,16 @@
+<svg width="24" height="16" viewBox="0 0 24 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Battery pack frame -->
+  <rect x="1" y="1" width="22" height="14" rx="2" fill="#282c34" stroke="#282c34" stroke-width="1"/>
+  
+  <!-- Top battery bar (75-80%) -->
+  <rect x="2" y="2" width="14" height="3" fill="#32cd32"/>
+  <circle cx="16" cy="3.5" r="0.5" fill="#32cd32"/>
+  
+  <!-- Middle battery bar (60-65%) -->
+  <rect x="2" y="6" width="11" height="3" fill="#32cd32"/>
+  <circle cx="13" cy="7.5" r="0.5" fill="#32cd32"/>
+  
+  <!-- Bottom battery bar (85-90%) -->
+  <rect x="2" y="10" width="15" height="3" fill="#32cd32"/>
+  <circle cx="17" cy="11.5" r="0.5" fill="#32cd32"/>
+</svg>

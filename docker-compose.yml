@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # Solar Monitoring Backend
+  solar-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: solar-monitoring-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./solarhub.db:/app/solarhub.db
+      - /dev/ttyUSB0:/dev/ttyUSB0  # For RTU communication
+    environment:
+      - TZ=Asia/Karachi
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0  # For RTU communication
+    networks:
+      - solar-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/now"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React Web Application
+  solar-frontend:
+    build:
+      context: ./webapp-react
+      dockerfile: Dockerfile
+    container_name: solar-monitoring-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - solar-backend
+    networks:
+      - solar-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: solar-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # SSL certificates
+    depends_on:
+      - solar-backend
+      - solar-frontend
+    networks:
+      - solar-network
+
+  # MQTT Broker (Optional)
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: solar-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto-data:/mosquitto/data
+      - ./mosquitto-logs:/mosquitto/log
+    networks:
+      - solar-network
+
+  # Database (Optional - for advanced features)
+  postgres:
+    image: postgres:15-alpine
+    container_name: solar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: solar_monitoring
+      POSTGRES_USER: solar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solar123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - solar-network
+
+  # Redis (Optional - for caching)
+  redis:
+    image: redis:7-alpine
+    container_name: solar-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - solar-network
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  solar-network:
+    driver: bridge
