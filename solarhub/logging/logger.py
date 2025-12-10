@@ -139,6 +139,37 @@ class DataLogger:
             )
         """)
         log.info("Created/verified battery tables")
+        
+        # Create users table for authentication
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                first_name TEXT NOT NULL,
+                last_name TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        log.info("Created/verified users table")
+        
+        # Create user_sessions table for token-based authentication
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(token)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id)")
+        log.info("Created/verified user_sessions table")
 
         # Create meter_samples table for storing meter telemetry
         cur.execute("""

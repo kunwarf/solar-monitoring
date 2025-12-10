@@ -15,6 +15,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined)
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentApp, setCurrentApp] = useState<AppConfig>(getDefaultApp())
   const [isLoading, setIsLoading] = useState(true)
+  const isNavigatingRef = React.useRef(false)
 
   const availableApps = Object.values(appRegistry).filter(app => app.enabled)
 
@@ -29,6 +30,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const initializeApp = async () => {
       try {
         setIsLoading(true)
+        
+        // Check if we just navigated (from sessionStorage)
+        let wasNavigating = false
+        let navigatingTo: string | null = null
+        try {
+          wasNavigating = sessionStorage.getItem('__app_navigating__') === 'true'
+          navigatingTo = sessionStorage.getItem('__app_navigating_to__')
+        } catch (e) {
+          // sessionStorage not available, continue normally
+        }
+        
+        if (wasNavigating) {
+          // Clear the navigation flag
+          try {
+            sessionStorage.removeItem('__app_navigating__')
+            sessionStorage.removeItem('__app_navigating_to__')
+          } catch (e) {
+            // Ignore
+          }
+          
+          // If we were navigating to a specific route, wait a bit for React to hydrate
+          // This prevents hydration errors
+          if (navigatingTo) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+          }
+        }
         
         // Try to detect current app from URL by checking which app's routes match
         const currentPath = window.location.pathname
@@ -54,7 +81,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setCurrentApp(appRegistry[defaultAppId])
             // Only redirect if we're not on a valid route
             if (currentPath === '/' || !currentPath.startsWith('/')) {
-              window.location.href = appRegistry[defaultAppId].defaultRoute
+              isNavigatingRef.current = true
+              window.location.replace(appRegistry[defaultAppId].defaultRoute)
               return // Exit early since we're redirecting
             }
           } else {
@@ -63,7 +91,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setCurrentApp(defaultApp)
             // Only redirect if we're on root or invalid path
             if (currentPath === '/' || !currentPath.startsWith('/')) {
-              window.location.href = defaultApp.defaultRoute
+              isNavigatingRef.current = true
+              window.location.replace(defaultApp.defaultRoute)
               return // Exit early since we're redirecting
             }
           }
@@ -74,6 +103,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const defaultApp = getDefaultApp()
         setCurrentApp(defaultApp)
       } finally {
+        // Clear navigation flag after initialization
+        isNavigatingRef.current = false
         setIsLoading(false)
       }
     }
@@ -84,10 +115,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const switchApp = (appId: string) => {
     const app = appRegistry[appId]
     if (app && app.enabled) {
-      setCurrentApp(app)
-      // Navigate to the app's default route
-      // This will cause a full page reload, which will recreate the router
-      window.location.href = app.defaultRoute
+      // Set navigation flag to prevent any state updates or router creation during navigation
+      isNavigatingRef.current = true
+      
+      // Store navigation flag in sessionStorage so it persists across page reload
+      // This helps detect if we're in the middle of a navigation when page reloads
+      try {
+        sessionStorage.setItem('__app_navigating__', 'true')
+        sessionStorage.setItem('__app_navigating_to__', app.defaultRoute)
+      } catch (e) {
+        // Ignore sessionStorage errors (may not be available in some contexts)
+      }
+
+      // Use replace instead of href to avoid adding to history and prevent back button issues
+      // This also helps prevent hydration errors by ensuring a clean navigation
+      window.location.replace(app.defaultRoute)
     }
   }
 

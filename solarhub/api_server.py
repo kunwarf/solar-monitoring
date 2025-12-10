@@ -3253,6 +3253,147 @@ def create_api(solar_app) -> FastAPI:
             }
 
     # ------------------------------------------------------------------
+    # Authentication API
+    # ------------------------------------------------------------------
+    
+    from solarhub.auth_manager import AuthManager
+    auth_manager = AuthManager()
+    
+    @app.post("/api/auth/register")
+    def api_register(request: Dict[str, Any]) -> Dict[str, Any]:
+        """Register a new user."""
+        try:
+            email = request.get("email")
+            password = request.get("password")
+            first_name = request.get("firstName")
+            last_name = request.get("lastName")
+            
+            if not all([email, password, first_name, last_name]):
+                return {
+                    "status": "error",
+                    "error": "All fields are required"
+                }
+            
+            result = auth_manager.register_user(email, password, first_name, last_name)
+            
+            if result["success"]:
+                return {
+                    "status": "ok",
+                    "user": result["user"],
+                    "token": result["token"]
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result["error"]
+                }
+                
+        except Exception as e:
+            log.error(f"Registration error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": "Registration failed. Please try again."
+            }
+    
+    @app.post("/api/auth/login")
+    def api_login(request: Dict[str, Any]) -> Dict[str, Any]:
+        """Login a user."""
+        try:
+            email = request.get("email")
+            password = request.get("password")
+            
+            if not email or not password:
+                return {
+                    "status": "error",
+                    "error": "Email and password are required"
+                }
+            
+            result = auth_manager.login_user(email, password)
+            
+            if result["success"]:
+                return {
+                    "status": "ok",
+                    "user": result["user"],
+                    "token": result["token"]
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result["error"]
+                }
+                
+        except Exception as e:
+            log.error(f"Login error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": "Login failed. Please try again."
+            }
+    
+    @app.post("/api/auth/verify")
+    def api_verify_token(request: Dict[str, Any]) -> Dict[str, Any]:
+        """Verify a session token."""
+        try:
+            token = request.get("token")
+            
+            if not token:
+                return {
+                    "status": "error",
+                    "error": "Token is required"
+                }
+            
+            user = auth_manager.verify_token(token)
+            
+            if user:
+                return {
+                    "status": "ok",
+                    "user": user
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": "Invalid or expired token"
+                }
+                
+        except Exception as e:
+            log.error(f"Token verification error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": "Token verification failed"
+            }
+    
+    @app.post("/api/auth/logout")
+    def api_logout(request: Dict[str, Any]) -> Dict[str, Any]:
+        """Logout a user (invalidate session token)."""
+        try:
+            token = request.get("token")
+            
+            if not token:
+                return {
+                    "status": "error",
+                    "error": "Token is required"
+                }
+            
+            success = auth_manager.logout_user(token)
+            
+            if success:
+                return {
+                    "status": "ok",
+                    "message": "Logged out successfully"
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": "Logout failed"
+                }
+                
+        except Exception as e:
+            log.error(f"Logout error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": "Logout failed"
+            }
+    
+    # ------------------------------------------------------------------
     # User Preferences API
     # ------------------------------------------------------------------
     
@@ -3262,9 +3403,10 @@ def create_api(solar_app) -> FastAPI:
         try:
             # For now, return empty preferences (can be extended to use database)
             # In the future, this could store preferences per user in a database
+            # Returning None means frontend will use system default (start app - Modern Solar Monitoring)
             return {
                 "status": "ok",
-                "default_app": None,  # Will be set by frontend
+                "default_app": None,  # None = use system default (start app for both mobile and desktop)
             }
         except Exception as e:
             log.error(f"Error getting user preferences: {e}", exc_info=True)

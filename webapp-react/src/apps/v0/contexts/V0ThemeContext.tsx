@@ -28,7 +28,16 @@ export const V0ThemeProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [theme])
 
   const toggleTheme = () => {
-    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'))
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    // Update DOM immediately and synchronously BEFORE state update for instant feedback
+    const root = document.documentElement
+    root.classList.remove('dark', 'light')
+    root.classList.add(newTheme)
+    localStorage.setItem('v0-theme', newTheme)
+    // Force CSS recalculation by accessing computed style
+    getComputedStyle(root).getPropertyValue('--background')
+    // Then update state to trigger re-render (useEffect will also run as backup)
+    setThemeState(newTheme)
   }
 
   const setTheme = (newTheme: Theme) => {

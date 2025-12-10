@@ -13,9 +13,12 @@ import { Badge } from '../apps/v0/components/ui/badge'
 // Import theme contexts
 import { useTheme as useDefaultTheme } from '../contexts/ThemeContext'
 import { useV0Theme } from '../apps/v0/contexts/V0ThemeContext'
+import { useTheme as useStartTheme } from '../apps/start/src/hooks/use-theme'
 
 // Import v0 styles for CSS variables
 import '../apps/v0/styles/globals.css'
+// Import start app styles for CSS variables
+import '../apps/start/styles/globals.css'
 
 // Navigation items configuration per app
 const getNavItems = (appId: string) => {
@@ -27,6 +30,17 @@ const getNavItems = (appId: string) => {
       { icon: Gauge, label: 'Energy Meters', href: '/v0/meters' },
       { icon: Receipt, label: 'Billing', href: '/v0/billing' },
       { icon: Settings, label: 'Settings', href: '/v0/settings' },
+    ]
+  }
+  
+  if (appId === 'start') {
+    return [
+      { icon: Home, label: 'Dashboard', href: '/start' },
+      { icon: Cpu, label: 'Devices', href: '/start/devices' },
+      { icon: Gauge, label: 'Telemetry', href: '/start/telemetry' },
+      { icon: Settings, label: 'Smart Scheduler', href: '/start/scheduler' },
+      { icon: Receipt, label: 'Billing', href: '/start/billing' },
+      { icon: Settings, label: 'Settings', href: '/start/settings' },
     ]
   }
   
@@ -46,21 +60,34 @@ export function SharedSidebar() {
   const { currentApp } = useApp()
   const navItems = getNavItems(currentApp.id)
   
-  // Always call both theme hooks (required by React rules)
-  // useV0Theme now returns a safe default if not in provider
+  // Always call all theme hooks (required by React rules)
+  // These hooks return safe defaults if not in provider
   const v0Theme = useV0Theme()
+  const startTheme = useStartTheme() // Always call - hook returns safe defaults if not in provider
   const defaultTheme = useDefaultTheme()
   
-  // Use v0 theme if in v0 app, otherwise use default theme
-  const theme = currentApp.id === 'v0' ? v0Theme.theme : defaultTheme.theme
-  const toggleTheme = currentApp.id === 'v0' ? v0Theme.toggleTheme : defaultTheme.toggleTheme
+  // Use appropriate theme based on current app
+  let theme: 'light' | 'dark'
+  let toggleTheme: () => void
+  
+  if (currentApp.id === 'v0') {
+    theme = v0Theme.theme
+    toggleTheme = v0Theme.toggleTheme
+  } else if (currentApp.id === 'start') {
+    theme = startTheme.theme
+    toggleTheme = startTheme.toggleTheme
+  } else {
+    theme = defaultTheme.theme
+    toggleTheme = defaultTheme.toggleTheme
+  }
 
   return (
-    <aside
-      className={cn(
-        'flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 relative h-screen overflow-hidden',
-        collapsed ? 'w-16' : 'w-64',
-      )}
+    <>
+      <aside
+        className={cn(
+          'hidden md:flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 fixed left-0 top-0 z-10 h-screen overflow-hidden',
+          collapsed ? 'w-16' : 'w-64',
+        )}
       style={{
         backgroundColor: 'var(--sidebar)',
         borderColor: 'var(--sidebar-border)',
@@ -191,6 +218,9 @@ export function SharedSidebar() {
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
       </Button>
     </aside>
+    {/* Spacer to push main content - only on desktop */}
+    <div className={cn('hidden md:block transition-all duration-300 flex-shrink-0', collapsed ? 'w-16' : 'w-64')} />
+    </>
   )
 }
 

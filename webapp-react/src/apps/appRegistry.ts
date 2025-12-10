@@ -19,12 +19,22 @@ export interface AppConfig {
 // Import app configurations
 import { defaultAppRoutes } from './default/routes'
 import { v0AppRoutes } from './v0/routes'
+import { startAppRoutes } from './start/routes'
 
 export const appRegistry: Record<string, AppConfig> = {
+  start: {
+    id: 'start',
+    name: 'Solar Monitoring',
+    description: 'Modern solar monitoring dashboard',
+    icon: 'sun',
+    defaultRoute: '/start',
+    routes: startAppRoutes,
+    enabled: true,
+  },
   default: {
     id: 'default',
-    name: 'Solar Monitoring',
-    description: 'Default solar monitoring dashboard',
+    name: 'Legacy Dashboard',
+    description: 'Legacy solar monitoring dashboard',
     icon: 'sun',
     defaultRoute: '/',
     routes: defaultAppRoutes,
@@ -66,8 +76,10 @@ export const getApp = (appId: string): AppConfig | undefined => {
 
 /**
  * Get default application
+ * Returns the "start" app (Solar Monitoring - Modern Dashboard) as the default
+ * This is the default for both mobile and desktop devices
  */
 export const getDefaultApp = (): AppConfig => {
-  return appRegistry.default
+  return appRegistry.start // Modern Solar Monitoring dashboard is the default for all devices
 }
 

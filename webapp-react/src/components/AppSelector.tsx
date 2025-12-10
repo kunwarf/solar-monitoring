@@ -3,12 +3,14 @@ import { Grid, ChevronDown, Check, Settings } from 'lucide-react'
 import { useApp } from '../contexts/AppContext'
 import { useMobile } from '../hooks/useMobile'
 import { useTheme } from '../contexts/ThemeContext'
+import { cn } from '../apps/v0/lib/utils'
 
 interface AppSelectorProps {
   isDrawer?: boolean
+  isMobileExpanded?: boolean // When true, shows all apps directly in the expanded menu
 }
 
-export const AppSelector: React.FC<AppSelectorProps> = ({ isDrawer = false }) => {
+export const AppSelector: React.FC<AppSelectorProps> = ({ isDrawer = false, isMobileExpanded = false }) => {
   const { currentApp, availableApps, switchApp, setDefaultApp } = useApp()
   const { isMobile } = useMobile()
   const { theme } = useTheme()
@@ -66,6 +68,8 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isDrawer = false }) =>
     } else {
       switchApp(appId)
       setIsOpen(false)
+      // If in mobile expanded view, we might want to close the parent menu
+      // This will be handled by the parent component (MobileBottomNav)
     }
   }
 
@@ -78,8 +82,65 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isDrawer = false }) =>
   const activeBg = theme === 'dark' ? '#3b82f6' : '#3b82f6'
   const activeText = '#FFFFFF'
 
+  // Mobile expanded version - shows all apps directly in the expanded menu
+  if (isMobileExpanded) {
+    return (
+      <div className="w-full">
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold text-sidebar-foreground mb-2">Applications</h3>
+        </div>
+        <div className="space-y-2">
+          {availableApps.length === 0 && (
+            <div className="px-4 py-2 text-xs text-muted-foreground">
+              No apps available
+            </div>
+          )}
+          {availableApps.map((app) => {
+            const isActive = currentApp.id === app.id
+            return (
+              <div key={app.id} className="w-full">
+                <button
+                  onClick={() => handleAppSelect(app.id)}
+                  className={cn(
+                    "w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all text-left",
+                    isActive
+                      ? "bg-primary/10 text-primary border border-primary/20"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent border border-transparent"
+                  )}
+                >
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate">{app.name}</span>
+                    {app.description && (
+                      <span className="text-xs opacity-70 truncate">{app.description}</span>
+                    )}
+                  </div>
+                  {isActive && (
+                    <Check className="w-4 h-4 ml-2 flex-shrink-0" />
+                  )}
+                </button>
+                {isActive && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAppSelect(app.id, true)
+                    }}
+                    className="w-full flex items-center px-4 py-2 mt-1 text-left text-xs text-sidebar-foreground opacity-70 hover:opacity-100 hover:bg-sidebar-accent rounded-lg transition-all"
+                    disabled={isSettingDefault}
+                  >
+                    <Settings className="w-3 h-3 mr-2" />
+                    {isSettingDefault ? 'Setting...' : 'Set as default'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   if (isDrawer || isMobile) {
-    // Mobile/drawer version - simplified button
+    // Mobile/drawer version - simplified button with dropdown
     return (
       <div className="relative" ref={dropdownRef}>
         <button

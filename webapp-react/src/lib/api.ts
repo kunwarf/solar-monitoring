@@ -1,3 +1,14 @@
+/**
+ * @deprecated This file is deprecated. Use the new API layer from '../api' instead.
+ * This file is kept for backward compatibility during migration.
+ * 
+ * New usage:
+ * ```typescript
+ * import { api } from '@/api'
+ * // or
+ * import { useHomeTelemetry } from '@/api/hooks'
+ * ```
+ */
 import { API_BASE_URL } from '../config'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -16,6 +27,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.text()
 }
 
+/**
+ * @deprecated Use '../api' instead
+ */
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: any) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),

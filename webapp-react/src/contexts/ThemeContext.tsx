@@ -33,7 +33,18 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [theme])
 
   const toggleTheme = () => {
-    setThemeState(prev => prev === 'light' ? 'dark' : 'light')
+    const newTheme = theme === 'light' ? 'dark' : 'light'
+    // Update DOM immediately and synchronously BEFORE state update for instant feedback
+    const root = document.documentElement
+    root.classList.remove('light', 'dark')
+    root.classList.add(newTheme)
+    document.body.classList.remove('light', 'dark')
+    document.body.classList.add(newTheme)
+    localStorage.setItem('theme', newTheme)
+    // Force CSS recalculation by accessing computed style
+    getComputedStyle(root).getPropertyValue('--background')
+    // Then update state to trigger re-render (useEffect will also run as backup)
+    setThemeState(newTheme)
   }
 
   const setTheme = (newTheme: Theme) => {
