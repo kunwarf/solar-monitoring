@@ -3,60 +3,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Cpu, Activity, Thermometer, Zap, AlertTriangle, CheckCircle, Settings, RefreshCw } from 'lucide-react'
-
-const inverters = [
-  {
-    id: 'INV-001',
-    name: 'Main Inverter',
-    model: 'SolarEdge SE10K',
-    status: 'online',
-    power: 8.2,
-    maxPower: 10,
-    efficiency: 97.5,
-    temperature: 42,
-    voltage: 240,
-    current: 34.2,
-    frequency: 50.01,
-    energyToday: 45.2,
-    energyTotal: 12450,
-    lastUpdate: '2 sec ago',
-  },
-  {
-    id: 'INV-002',
-    name: 'East Array Inverter',
-    model: 'SolarEdge SE7600',
-    status: 'online',
-    power: 5.8,
-    maxPower: 7.6,
-    efficiency: 96.8,
-    temperature: 38,
-    voltage: 238,
-    current: 24.4,
-    frequency: 50.0,
-    energyToday: 32.1,
-    energyTotal: 8920,
-    lastUpdate: '5 sec ago',
-  },
-  {
-    id: 'INV-003',
-    name: 'West Array Inverter',
-    model: 'SolarEdge SE5000',
-    status: 'warning',
-    power: 3.2,
-    maxPower: 5.0,
-    efficiency: 94.2,
-    temperature: 58,
-    voltage: 235,
-    current: 13.6,
-    frequency: 49.98,
-    energyToday: 18.5,
-    energyTotal: 5680,
-    lastUpdate: '3 sec ago',
-    alert: 'High temperature warning',
-  },
-]
+import { useV0Data } from '../data/V0DataProvider'
 
 export const InvertersPage: React.FC = () => {
+  const { inverters } = useV0Data()
+  
+  const totalInverters = inverters.length
+  const onlineCount = inverters.filter(inv => inv.status === 'online').length
+  const warningCount = inverters.filter(inv => inv.status === 'warning').length
+  const totalOutput = inverters.reduce((sum, inv) => sum + inv.power, 0)
+
   return (
     <div className="flex-1 p-6 space-y-6 overflow-auto">
       <div className="flex items-center justify-between">
@@ -80,7 +36,7 @@ export const InvertersPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Inverters</p>
-                <p className="text-2xl font-bold text-foreground">3</p>
+                <p className="text-2xl font-bold text-foreground">{totalInverters}</p>
               </div>
             </div>
           </CardContent>
@@ -93,7 +49,7 @@ export const InvertersPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Online</p>
-                <p className="text-2xl font-bold text-foreground">2</p>
+                <p className="text-2xl font-bold text-foreground">{onlineCount}</p>
               </div>
             </div>
           </CardContent>
@@ -106,7 +62,7 @@ export const InvertersPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Warnings</p>
-                <p className="text-2xl font-bold text-foreground">1</p>
+                <p className="text-2xl font-bold text-foreground">{warningCount}</p>
               </div>
             </div>
           </CardContent>
@@ -119,7 +75,7 @@ export const InvertersPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Output</p>
-                <p className="text-2xl font-bold text-foreground">17.2 kW</p>
+                <p className="text-2xl font-bold text-foreground">{totalOutput.toFixed(1)} kW</p>
               </div>
             </div>
           </CardContent>

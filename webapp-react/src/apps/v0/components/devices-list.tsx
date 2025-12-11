@@ -4,69 +4,7 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Cpu, Battery, Gauge, MoreVertical, CheckCircle, AlertTriangle, ChevronRight } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
-
-const devices = [
-  {
-    id: 1,
-    name: 'Inverter Array 1',
-    type: 'inverter',
-    model: 'SolarEdge SE10000H',
-    status: 'online',
-    output: '4.2 kW',
-    efficiency: '98.2%',
-    temperature: '42°C',
-  },
-  {
-    id: 2,
-    name: 'Inverter Array 2',
-    type: 'inverter',
-    model: 'SolarEdge SE7600H',
-    status: 'online',
-    output: '3.1 kW',
-    efficiency: '97.8%',
-    temperature: '38°C',
-  },
-  {
-    id: 3,
-    name: 'Inverter Array 3',
-    type: 'inverter',
-    model: 'SolarEdge SE5000H',
-    status: 'warning',
-    output: '1.1 kW',
-    efficiency: '89.2%',
-    temperature: '55°C',
-  },
-  {
-    id: 4,
-    name: 'Battery Pack 1',
-    type: 'battery',
-    model: 'Tesla Powerwall 2',
-    status: 'online',
-    charge: '76%',
-    power: '+2.1 kW',
-    cycles: '342',
-  },
-  {
-    id: 5,
-    name: 'Battery Pack 2',
-    type: 'battery',
-    model: 'Tesla Powerwall 2',
-    status: 'online',
-    charge: '82%',
-    power: '+1.8 kW',
-    cycles: '298',
-  },
-  {
-    id: 6,
-    name: 'Main Energy Meter',
-    type: 'meter',
-    model: 'Sense Energy Monitor',
-    status: 'online',
-    consumption: '3.2 kW',
-    export: '5.2 kW',
-    voltage: '240V',
-  },
-]
+import { useV0Data } from '../data/V0DataProvider'
 
 const getIcon = (type: string) => {
   switch (type) {
@@ -95,6 +33,8 @@ const getStatusColor = (status: string) => {
 }
 
 export function DevicesList() {
+  const { devices } = useV0Data()
+
   return (
     <Card className="bg-card border-border">
       <CardHeader className="flex flex-row items-center justify-between pb-2">

@@ -17,176 +17,9 @@ import {
   Heart,
   Gauge,
 } from 'lucide-react'
+import { useV0Data, type V0BatteryCell, type V0IndividualBattery, type V0BatteryPack } from '../data/V0DataProvider'
 
-interface Cell {
-  id: string
-  voltage: number
-  current: number
-  soc: number
-  temperature: number
-  status: 'normal' | 'warning' | 'critical' | 'balancing'
-}
-
-interface IndividualBattery {
-  id: string
-  name: string
-  model: string
-  status: 'charging' | 'discharging' | 'idle' | 'balancing'
-  soc: number
-  voltage: number
-  current: number
-  temperature: number
-  health: number
-  cells: Cell[]
-}
-
-interface BatteryPack {
-  id: string
-  name: string
-  location: string
-  status: 'online' | 'offline' | 'warning'
-  totalCapacity: number
-  batteries: IndividualBattery[]
-}
-
-const batteryPacks: BatteryPack[] = [
-  {
-    id: 'PACK-001',
-    name: 'Main Battery Pack',
-    location: 'Garage - East Wall',
-    status: 'online',
-    totalCapacity: 27,
-    batteries: [
-      {
-        id: 'BAT-001',
-        name: 'Battery Unit 1',
-        model: 'LFP-5000',
-        status: 'charging',
-        soc: 72,
-        voltage: 51.2,
-        current: 45.5,
-        temperature: 28,
-        health: 98,
-        cells: [
-          { id: 'C1', voltage: 3.21, current: 3.8, soc: 73, temperature: 27, status: 'normal' },
-          { id: 'C2', voltage: 3.2, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C3', voltage: 3.22, current: 3.9, soc: 74, temperature: 27, status: 'normal' },
-          { id: 'C4', voltage: 3.19, current: 3.7, soc: 71, temperature: 29, status: 'normal' },
-          { id: 'C5', voltage: 3.21, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C6', voltage: 3.18, current: 3.6, soc: 70, temperature: 30, status: 'balancing' },
-          { id: 'C7', voltage: 3.2, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C8', voltage: 3.21, current: 3.8, soc: 73, temperature: 27, status: 'normal' },
-          { id: 'C9', voltage: 3.23, current: 3.9, soc: 75, temperature: 26, status: 'normal' },
-          { id: 'C10', voltage: 3.2, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C11', voltage: 3.19, current: 3.7, soc: 71, temperature: 29, status: 'normal' },
-          { id: 'C12', voltage: 3.21, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C13', voltage: 3.2, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-          { id: 'C14', voltage: 3.22, current: 3.9, soc: 74, temperature: 27, status: 'normal' },
-          { id: 'C15', voltage: 3.21, current: 3.8, soc: 73, temperature: 28, status: 'normal' },
-          { id: 'C16', voltage: 3.2, current: 3.8, soc: 72, temperature: 28, status: 'normal' },
-        ],
-      },
-      {
-        id: 'BAT-002',
-        name: 'Battery Unit 2',
-        model: 'LFP-5000',
-        status: 'charging',
-        soc: 68,
-        voltage: 50.8,
-        current: 42.3,
-        temperature: 29,
-        health: 97,
-        cells: [
-          { id: 'C1', voltage: 3.18, current: 3.5, soc: 69, temperature: 29, status: 'normal' },
-          { id: 'C2', voltage: 3.17, current: 3.5, soc: 68, temperature: 30, status: 'normal' },
-          { id: 'C3', voltage: 3.19, current: 3.6, soc: 70, temperature: 28, status: 'normal' },
-          { id: 'C4', voltage: 3.16, current: 3.4, soc: 67, temperature: 31, status: 'warning' },
-          { id: 'C5', voltage: 3.18, current: 3.5, soc: 69, temperature: 29, status: 'normal' },
-          { id: 'C6', voltage: 3.17, current: 3.5, soc: 68, temperature: 30, status: 'normal' },
-          { id: 'C7', voltage: 3.19, current: 3.6, soc: 70, temperature: 28, status: 'normal' },
-          { id: 'C8', voltage: 3.18, current: 3.5, soc: 69, temperature: 29, status: 'normal' },
-          { id: 'C9', voltage: 3.2, current: 3.7, soc: 71, temperature: 27, status: 'normal' },
-          { id: 'C10', voltage: 3.17, current: 3.5, soc: 68, temperature: 30, status: 'normal' },
-          { id: 'C11', voltage: 3.16, current: 3.4, soc: 67, temperature: 31, status: 'normal' },
-          { id: 'C12', voltage: 3.18, current: 3.5, soc: 69, temperature: 29, status: 'normal' },
-          { id: 'C13', voltage: 3.17, current: 3.5, soc: 68, temperature: 30, status: 'normal' },
-          { id: 'C14', voltage: 3.19, current: 3.6, soc: 70, temperature: 28, status: 'normal' },
-          { id: 'C15', voltage: 3.18, current: 3.5, soc: 69, temperature: 29, status: 'normal' },
-          { id: 'C16', voltage: 3.17, current: 3.5, soc: 68, temperature: 30, status: 'normal' },
-        ],
-      },
-      {
-        id: 'BAT-003',
-        name: 'Battery Unit 3',
-        model: 'LFP-5000',
-        status: 'idle',
-        soc: 100,
-        voltage: 54.4,
-        current: 0,
-        temperature: 25,
-        health: 99,
-        cells: [
-          { id: 'C1', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C2', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C3', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C4', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C5', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C6', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C7', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C8', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C9', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C10', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C11', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C12', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C13', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C14', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C15', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-          { id: 'C16', voltage: 3.4, current: 0, soc: 100, temperature: 25, status: 'normal' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'PACK-002',
-    name: 'Backup Battery Pack',
-    location: 'Basement - Storage Room',
-    status: 'online',
-    totalCapacity: 13.5,
-    batteries: [
-      {
-        id: 'BAT-004',
-        name: 'Battery Unit 1',
-        model: 'LFP-5000',
-        status: 'discharging',
-        soc: 45,
-        voltage: 48.6,
-        current: -32.1,
-        temperature: 31,
-        health: 96,
-        cells: [
-          { id: 'C1', voltage: 3.04, current: -2.0, soc: 46, temperature: 31, status: 'normal' },
-          { id: 'C2', voltage: 3.03, current: -2.0, soc: 45, temperature: 32, status: 'normal' },
-          { id: 'C3', voltage: 3.05, current: -2.1, soc: 47, temperature: 30, status: 'normal' },
-          { id: 'C4', voltage: 3.02, current: -1.9, soc: 44, temperature: 33, status: 'warning' },
-          { id: 'C5', voltage: 3.04, current: -2.0, soc: 46, temperature: 31, status: 'normal' },
-          { id: 'C6', voltage: 3.03, current: -2.0, soc: 45, temperature: 32, status: 'normal' },
-          { id: 'C7', voltage: 3.05, current: -2.1, soc: 47, temperature: 30, status: 'normal' },
-          { id: 'C8', voltage: 3.04, current: -2.0, soc: 46, temperature: 31, status: 'normal' },
-          { id: 'C9', voltage: 3.06, current: -2.2, soc: 48, temperature: 29, status: 'normal' },
-          { id: 'C10', voltage: 3.03, current: -2.0, soc: 45, temperature: 32, status: 'normal' },
-          { id: 'C11', voltage: 3.02, current: -1.9, soc: 44, temperature: 33, status: 'normal' },
-          { id: 'C12', voltage: 3.04, current: -2.0, soc: 46, temperature: 31, status: 'normal' },
-          { id: 'C13', voltage: 3.03, current: -2.0, soc: 45, temperature: 32, status: 'normal' },
-          { id: 'C14', voltage: 3.05, current: -2.1, soc: 47, temperature: 30, status: 'normal' },
-          { id: 'C15', voltage: 3.04, current: -2.0, soc: 46, temperature: 31, status: 'normal' },
-          { id: 'C16', voltage: 3.03, current: -2.0, soc: 45, temperature: 32, status: 'normal' },
-        ],
-      },
-    ],
-  },
-]
-
-function getCellStatusColor(status: Cell['status']) {
+function getCellStatusColor(status: V0BatteryCell['status']) {
   switch (status) {
     case 'normal':
       return 'bg-green-500'
@@ -199,7 +32,7 @@ function getCellStatusColor(status: Cell['status']) {
   }
 }
 
-function getCellFillColor(status: Cell['status']) {
+function getCellFillColor(status: V0BatteryCell['status']) {
   switch (status) {
     case 'normal':
       return '#22c55e'
@@ -212,7 +45,7 @@ function getCellFillColor(status: Cell['status']) {
   }
 }
 
-function getCellStatusBorder(status: Cell['status']) {
+function getCellStatusBorder(status: V0BatteryCell['status']) {
   switch (status) {
     case 'normal':
       return 'border-green-500/30'
@@ -225,7 +58,7 @@ function getCellStatusBorder(status: Cell['status']) {
   }
 }
 
-function getBatteryStatusBadge(status: IndividualBattery['status']) {
+function getBatteryStatusBadge(status: V0IndividualBattery['status']) {
   switch (status) {
     case 'charging':
       return (
@@ -252,7 +85,7 @@ function BatteryVisual({
   soc,
   status,
   isCharging,
-}: { soc: number; status: IndividualBattery['status']; isCharging: boolean }) {
+}: { soc: number; status: V0IndividualBattery['status']; isCharging: boolean }) {
   const fillColor = soc > 60 ? '#22c55e' : soc > 30 ? '#f59e0b' : '#ef4444'
 
   return (
@@ -316,7 +149,7 @@ function BatteryVisual({
   )
 }
 
-function CellVisual({ cell, onClick }: { cell: Cell; onClick: () => void }) {
+function CellVisual({ cell, onClick }: { cell: V0BatteryCell; onClick: () => void }) {
   const fillColor = getCellFillColor(cell.status)
   const tempColor = cell.temperature > 35 ? '#ef4444' : cell.temperature > 30 ? '#f59e0b' : '#22c55e'
 
@@ -417,7 +250,7 @@ function CellVisual({ cell, onClick }: { cell: Cell; onClick: () => void }) {
   )
 }
 
-function CellDetailModal({ cell, onClose }: { cell: Cell; onClose: () => void }) {
+function CellDetailModal({ cell, onClose }: { cell: V0BatteryCell; onClose: () => void }) {
   const fillColor = getCellFillColor(cell.status)
   const tempColor = cell.temperature > 35 ? '#ef4444' : cell.temperature > 30 ? '#f59e0b' : '#22c55e'
 
@@ -602,9 +435,17 @@ function CellDetailModal({ cell, onClose }: { cell: Cell; onClose: () => void })
 }
 
 export const BatteriesPage: React.FC = () => {
-  const [expandedPacks, setExpandedPacks] = useState<string[]>(['PACK-001'])
+  const { batteryPacks } = useV0Data()
+  const [expandedPacks, setExpandedPacks] = useState<string[]>([])
   const [expandedBatteries, setExpandedBatteries] = useState<string[]>([])
-  const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
+  const [selectedCell, setSelectedCell] = useState<V0BatteryCell | null>(null)
+  
+  // Auto-expand first pack if available
+  React.useEffect(() => {
+    if (batteryPacks.length > 0 && expandedPacks.length === 0) {
+      setExpandedPacks([batteryPacks[0].id])
+    }
+  }, [batteryPacks, expandedPacks.length])
 
   const togglePack = (packId: string) => {
     setExpandedPacks((prev) => (prev.includes(packId) ? prev.filter((id) => id !== packId) : [...prev, packId]))

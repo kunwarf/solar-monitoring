@@ -3,55 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Gauge, Activity, Zap, ArrowDown, ArrowUp, TrendingUp, TrendingDown, Settings, BarChart3 } from 'lucide-react'
-
-const meters = [
-  {
-    id: 'MTR-001',
-    name: 'Main Grid Meter',
-    type: 'Bidirectional',
-    status: 'exporting',
-    currentPower: -2.4,
-    voltage: 240,
-    current: 10.0,
-    frequency: 50.01,
-    powerFactor: 0.98,
-    importToday: 5.2,
-    exportToday: 18.6,
-    importTotal: 4520,
-    exportTotal: 8240,
-    lastUpdate: '1 sec ago',
-  },
-  {
-    id: 'MTR-002',
-    name: 'Solar Production Meter',
-    type: 'Production',
-    status: 'generating',
-    currentPower: 12.8,
-    voltage: 380,
-    current: 33.7,
-    frequency: 50.0,
-    powerFactor: 0.99,
-    productionToday: 58.4,
-    productionTotal: 24680,
-    lastUpdate: '2 sec ago',
-  },
-  {
-    id: 'MTR-003',
-    name: 'Home Consumption Meter',
-    type: 'Consumption',
-    status: 'active',
-    currentPower: 4.2,
-    voltage: 240,
-    current: 17.5,
-    frequency: 50.0,
-    powerFactor: 0.95,
-    consumptionToday: 32.1,
-    consumptionTotal: 18450,
-    lastUpdate: '1 sec ago',
-  },
-]
+import { useV0Data } from '../data/V0DataProvider'
 
 export const MetersPage: React.FC = () => {
+  const { meters } = useV0Data()
+  
   return (
     <div className="flex-1 p-6 space-y-6 overflow-auto">
       <div className="flex items-center justify-between">
