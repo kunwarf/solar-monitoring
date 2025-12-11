@@ -870,14 +870,16 @@ def create_api(solar_app) -> FastAPI:
     def api_home_now(
         period: str = "today",
         start_date: Optional[str] = None,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        system_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get aggregated home-level telemetry (all arrays and home-attached meters).
+        """Get aggregated system-level telemetry (all arrays and system-attached meters).
         
         Args:
             period: Time period filter ('today', 'week', 'month', 'year', 'custom')
             start_date: Start date for custom period (YYYY-MM-DD)
             end_date: End date for custom period (YYYY-MM-DD)
+            system_id: System ID to query (defaults to first system or 'system')
         """
         try:
             from solarhub.array_aggregator import ArrayAggregator
@@ -886,11 +888,78 @@ def create_api(solar_app) -> FastAPI:
             if not solar_app or not hasattr(solar_app, 'cfg'):
                 return {"status": "error", "error": "Solar app not available"}
             
-            # Get all array telemetry
+            # Determine system_id - use hierarchy if available, otherwise default
+            target_system_id = system_id or "system"
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                if not system_id:
+                    # Use first system if no system_id specified
+                    target_system_id = next(iter(solar_app.hierarchy_systems.keys()))
+                elif system_id not in solar_app.hierarchy_systems:
+                    return {"status": "error", "error": f"System '{system_id}' not found"}
+            
+            # Get all array telemetry - use hierarchy if available
             array_telemetry = {}
-            if solar_app.cfg.arrays:
+            aggregator = ArrayAggregator()
+            
+            # Use hierarchy if available
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems and target_system_id in solar_app.hierarchy_systems:
+                system = solar_app.hierarchy_systems[target_system_id]
+                
+                for inv_array in system.inverter_arrays:
+                    # Get inverter telemetry for this array
+                    inverter_telemetry = {}
+                    for inverter in inv_array.inverters:
+                        tel_dict = solar_app.get_now(inverter.inverter_id)
+                        if tel_dict:
+                            from solarhub.models import Telemetry
+                            tel = Telemetry(**tel_dict)
+                            inverter_telemetry[inverter.inverter_id] = tel
+                    
+                    # Get pack telemetry if available
+                    pack_telemetry = {}
+                    pack_configs = {}
+                    if inv_array.attached_battery_array_id:
+                        # Find attached battery array
+                        for bat_array in system.battery_arrays:
+                            if bat_array.battery_array_id == inv_array.attached_battery_array_id:
+                                for pack in bat_array.battery_packs:
+                                    pack_id = pack.pack_id
+                                    if pack.nominal_kwh:
+                                        pack_configs[pack_id] = {
+                                            "nominal_kwh": pack.nominal_kwh,
+                                            "max_charge_kw": pack.max_charge_kw or 0.0,
+                                            "max_discharge_kw": pack.max_discharge_kw or 0.0,
+                                        }
+                                    
+                                    # Get battery telemetry
+                                    if hasattr(solar_app, 'battery_last') and solar_app.battery_last:
+                                        if isinstance(solar_app.battery_last, dict):
+                                            battery_tel = solar_app.battery_last.get(pack_id)
+                                            if battery_tel:
+                                                from solarhub.array_models import BatteryPackTelemetry
+                                                pack_tel = BatteryPackTelemetry(
+                                                    pack_id=pack_id,
+                                                    array_id=inv_array.array_id,
+                                                    ts=battery_tel.ts,
+                                                    soc_pct=battery_tel.soc,
+                                                    voltage_v=battery_tel.voltage,
+                                                    current_a=battery_tel.current,
+                                                    power_w=battery_tel.voltage * battery_tel.current if battery_tel.voltage and battery_tel.current else None,
+                                                    temperature_c=battery_tel.temperature,
+                                                )
+                                                pack_telemetry[pack_id] = pack_tel
+                                break
+                    
+                    # Aggregate array telemetry
+                    if inverter_telemetry:
+                        array_tel = aggregator.aggregate_array_telemetry(
+                            inv_array.array_id, inverter_telemetry, pack_telemetry, pack_configs
+                        )
+                        array_telemetry[inv_array.array_id] = array_tel
+            
+            # Fallback to config-based approach
+            elif solar_app.cfg.arrays:
                 array_objs = build_array_runtime_objects(solar_app.cfg)
-                aggregator = ArrayAggregator()
                 
                 for array_cfg in solar_app.cfg.arrays:
                     # Get inverter telemetry for this array
@@ -1229,9 +1298,34 @@ def create_api(solar_app) -> FastAPI:
             home_dict["monthly_energy"] = monthly_energy
             home_dict["financial_metrics"] = financial_metrics
             
+            # Add hierarchy information
+            target_system_id = "system"  # Default
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                target_system_id = next(iter(solar_app.hierarchy_systems.keys()))
+                system = solar_app.hierarchy_systems[target_system_id]
+                home_dict["system_id"] = target_system_id
+                home_dict["system_name"] = system.name
+                home_dict["system_description"] = system.description
+                home_dict["timezone"] = system.timezone
+            
+            # Ensure all arrays in response include hierarchy IDs
+            if "arrays" in home_dict and isinstance(home_dict["arrays"], list):
+                for array_data in home_dict["arrays"]:
+                    if "array_id" in array_data:
+                        array_id = array_data["array_id"]
+                        # Add system_id to array data
+                        array_data["system_id"] = target_system_id
+                        # Add hierarchy info if available
+                        if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                            for sys in solar_app.hierarchy_systems.values():
+                                for inv_array in sys.inverter_arrays:
+                                    if inv_array.array_id == array_id:
+                                        array_data["system_id"] = inv_array.system_id
+                                        break
+            
             return {
                 "status": "ok",
-                "home": home_dict
+                "system": home_dict  # Changed from "home" to "system" to reflect hierarchy
             }
         except Exception as e:
             log.error(f"Error in /api/home/now: {e}", exc_info=True)
@@ -1392,6 +1486,32 @@ def create_api(solar_app) -> FastAPI:
                     inverter_count=inv_count
                 )
                 consolidated["_metadata"] = metadata.to_dict()
+                
+                # Add hierarchy information
+                if array_id:
+                    consolidated["array_id"] = array_id
+                    # Find system_id from hierarchy
+                    if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                        for system in solar_app.hierarchy_systems.values():
+                            for inv_array in system.inverter_arrays:
+                                if inv_array.array_id == array_id:
+                                    consolidated["system_id"] = inv_array.system_id
+                                    break
+                else:
+                    # For "all" without array filter, try to determine from inverters
+                    if inverter_ids and hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                        # Get system_id from first inverter
+                        for system in solar_app.hierarchy_systems.values():
+                            for inv_array in system.inverter_arrays:
+                                for inv in inv_array.inverters:
+                                    if inv.inverter_id in inverter_ids:
+                                        consolidated["system_id"] = inv.system_id
+                                        consolidated["array_id"] = inv.array_id
+                                        break
+                                if "system_id" in consolidated:
+                                    break
+                            if "system_id" in consolidated:
+                                break
                 
                 return {"inverter_id": "all", "now": consolidated}
 
@@ -1622,6 +1742,24 @@ def create_api(solar_app) -> FastAPI:
             
             # Make the entire normalized dict JSON-serializable to prevent circular references
             normalized = _make_json_serializable(normalized)
+            
+            # Add hierarchy information to response
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                for system in solar_app.hierarchy_systems.values():
+                    for inv_array in system.inverter_arrays:
+                        for inv in inv_array.inverters:
+                            if inv.inverter_id == inverter_id:
+                                normalized["system_id"] = inv.system_id
+                                normalized["array_id"] = inv.array_id
+                                break
+                        if "system_id" in normalized:
+                            break
+                    if "system_id" in normalized:
+                        break
+            elif hasattr(solar_app, '_hierarchy_inverters') and inverter_id in solar_app._hierarchy_inverters:
+                inv = solar_app._hierarchy_inverters[inverter_id]
+                normalized["system_id"] = inv.system_id
+                normalized["array_id"] = inv.array_id
             
             return {"inverter_id": inverter_id, "now": normalized}
             
@@ -3188,11 +3326,119 @@ def create_api(solar_app) -> FastAPI:
 
     @app.get("/api/config")
     def api_get_config() -> Dict[str, Any]:
-        """Get current configuration settings."""
+        """Get current configuration settings with hierarchy structure from database."""
         try:
             log.info("API /api/config called")
             
-            # Load configuration from database first, then fallback to config file
+            # Load hierarchy from database first (primary source)
+            hierarchy_data = {}
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                log.info(f"Loading hierarchy from database: {len(solar_app.hierarchy_systems)} system(s)")
+                # Convert hierarchy systems to dictionary format
+                systems_list = []
+                for system_id, system in solar_app.hierarchy_systems.items():
+                    system_dict = {
+                        "system_id": system.system_id,
+                        "name": system.name,
+                        "description": system.description,
+                        "timezone": system.timezone,
+                        "inverter_arrays": [],
+                        "battery_arrays": [],
+                        "meters": []
+                    }
+                    
+                    # Add inverter arrays
+                    for inv_array in system.inverter_arrays:
+                        array_dict = {
+                            "array_id": inv_array.array_id,
+                            "name": inv_array.name,
+                            "system_id": inv_array.system_id,
+                            "inverters": [],
+                            "attached_battery_array_id": inv_array.attached_battery_array_id
+                        }
+                        for inverter in inv_array.inverters:
+                            inv_dict = {
+                                "inverter_id": inverter.inverter_id,
+                                "name": inverter.name,
+                                "array_id": inverter.array_id,
+                                "system_id": inverter.system_id,
+                                "model": inverter.model,
+                                "serial_number": inverter.serial_number,
+                                "vendor": inverter.vendor,
+                                "phase_type": inverter.phase_type
+                            }
+                            if inverter.adapter:
+                                inv_dict["adapter"] = {
+                                    "adapter_id": inverter.adapter.adapter_id,
+                                    "adapter_type": inverter.adapter.adapter_type,
+                                    "config": inverter.adapter.config_json
+                                }
+                            array_dict["inverters"].append(inv_dict)
+                        system_dict["inverter_arrays"].append(array_dict)
+                    
+                    # Add battery arrays
+                    for bat_array in system.battery_arrays:
+                        bat_array_dict = {
+                            "battery_array_id": bat_array.battery_array_id,
+                            "name": bat_array.name,
+                            "system_id": bat_array.system_id,
+                            "battery_packs": [],
+                            "attached_inverter_array_id": bat_array.attached_inverter_array_id
+                        }
+                        for pack in bat_array.battery_packs:
+                            pack_dict = {
+                                "pack_id": pack.pack_id,
+                                "name": pack.name,
+                                "battery_array_id": pack.battery_array_id,
+                                "system_id": pack.system_id,
+                                "chemistry": pack.chemistry,
+                                "nominal_kwh": pack.nominal_kwh,
+                                "max_charge_kw": pack.max_charge_kw,
+                                "max_discharge_kw": pack.max_discharge_kw
+                            }
+                            if pack.adapters:
+                                pack_dict["adapters"] = [
+                                    {
+                                        "adapter_id": adapter.adapter_id,
+                                        "adapter_type": adapter.adapter_type,
+                                        "priority": adapter.priority,
+                                        "enabled": adapter.enabled,
+                                        "config": adapter.config_json
+                                    }
+                                    for adapter in pack.adapters
+                                ]
+                            bat_array_dict["battery_packs"].append(pack_dict)
+                        system_dict["battery_arrays"].append(bat_array_dict)
+                    
+                    # Add meters
+                    for meter in system.meters:
+                        meter_dict = {
+                            "meter_id": meter.meter_id,
+                            "name": meter.name,
+                            "system_id": meter.system_id,
+                            "model": meter.model,
+                            "serial_number": meter.serial_number,
+                            "vendor": meter.vendor,
+                            "meter_type": meter.meter_type,
+                            "attachment_target": meter.attachment_target
+                        }
+                        if meter.adapter:
+                            meter_dict["adapter"] = {
+                                "adapter_id": meter.adapter.adapter_id,
+                                "adapter_type": meter.adapter.adapter_type,
+                                "config": meter.adapter.config_json
+                            }
+                        system_dict["meters"].append(meter_dict)
+                    
+                    systems_list.append(system_dict)
+                
+                hierarchy_data = {
+                    "systems": systems_list,
+                    "source": "database"
+                }
+            
+            # Also include config.yaml for backward compatibility
+            config_dict = {}
             if solar_app.config_manager:
                 config = solar_app.config_manager.load_config()
                 config_dict = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
@@ -3200,14 +3446,9 @@ def create_api(solar_app) -> FastAPI:
             elif solar_app.cfg:
                 config_dict = solar_app.cfg.model_dump() if hasattr(solar_app.cfg, 'model_dump') else solar_app.cfg.dict()
                 source = "config_file"
-            else:
-                return {
-                    "config": {},
-                    "source": "error",
-                    "error": "No configuration available"
-                }
             
             return {
+                "hierarchy": hierarchy_data if hierarchy_data else None,
                 "config": config_dict,
                 "source": source
             }
@@ -3215,6 +3456,7 @@ def create_api(solar_app) -> FastAPI:
         except Exception as e:
             log.error(f"Error getting configuration: {e}", exc_info=True)
             return {
+                "hierarchy": None,
                 "config": {},
                 "source": "error",
                 "error": str(e)
