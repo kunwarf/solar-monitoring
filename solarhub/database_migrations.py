@@ -486,6 +486,26 @@ def migrate_to_hierarchy_schema(db_path: str) -> None:
     
     This migration is idempotent (safe to run multiple times).
     """
+    import sqlite3
+    
+    # Check database integrity first
+    try:
+        con = sqlite3.connect(db_path)
+        cur = con.cursor()
+        # Run integrity check
+        cur.execute("PRAGMA integrity_check")
+        result = cur.fetchone()
+        if result and result[0] != "ok":
+            log.error(f"Database integrity check failed: {result[0]}")
+            log.error("Database is corrupted. Please restore from backup or recreate the database.")
+            con.close()
+            raise sqlite3.DatabaseError(f"Database corruption detected: {result[0]}")
+        con.close()
+    except sqlite3.DatabaseError as e:
+        log.error(f"Database integrity check failed: {e}")
+        log.error("Database is corrupted. Please restore from backup or recreate the database.")
+        raise
+    
     con = sqlite3.connect(db_path)
     cur = con.cursor()
     
@@ -1019,10 +1039,18 @@ def migrate_to_hierarchy_schema(db_path: str) -> None:
         
         for idx_name, table, columns in sample_indexes:
             try:
+                # Check if table exists before creating index
+                cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                if not cur.fetchone():
+                    log.warning(f"Table {table} does not exist, skipping index {idx_name}")
+                    continue
                 cur.execute(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table}({columns})")
                 log.debug(f"Created/verified index {idx_name}")
-            except sqlite3.OperationalError as e:
-                log.warning(f"Could not create index {idx_name}: {e}")
+            except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+                log.warning(f"Could not create index {idx_name} on table {table}: {e}")
+                # If database is corrupted, we can't continue
+                if "malformed" in str(e).lower() or "corrupt" in str(e).lower():
+                    raise
         
         # Summary table indexes
         summary_indexes = [
@@ -1044,10 +1072,18 @@ def migrate_to_hierarchy_schema(db_path: str) -> None:
         
         for idx_name, table, columns in summary_indexes:
             try:
+                # Check if table exists before creating index
+                cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                if not cur.fetchone():
+                    log.warning(f"Table {table} does not exist, skipping index {idx_name}")
+                    continue
                 cur.execute(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table}({columns})")
                 log.debug(f"Created/verified index {idx_name}")
-            except sqlite3.OperationalError as e:
-                log.warning(f"Could not create index {idx_name}: {e}")
+            except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+                log.warning(f"Could not create index {idx_name} on table {table}: {e}")
+                # If database is corrupted, we can't continue
+                if "malformed" in str(e).lower() or "corrupt" in str(e).lower():
+                    raise
         
         con.commit()
         log.info("Phase 1: Hierarchy schema migration completed successfully")

@@ -55,7 +55,16 @@ class DataLogger:
             )
             
             # Step 1: Create all new tables and add foreign keys
-            migrate_to_hierarchy_schema(self.path)
+            try:
+                migrate_to_hierarchy_schema(self.path)
+            except sqlite3.DatabaseError as e:
+                if "malformed" in str(e).lower() or "corrupt" in str(e).lower():
+                    log.error(f"Database is corrupted: {e}")
+                    log.error("Please restore from backup or recreate the database.")
+                    log.error("Application will continue but may not function correctly.")
+                    # Don't continue with other migration steps if database is corrupted
+                    return
+                raise
             
             # Step 2: Create default system if none exists
             create_default_system(self.path)

@@ -201,7 +201,11 @@ class HierarchyLoader:
     def _load_inverter_arrays(self, cur) -> List[sqlite3.Row]:
         """Load all inverter arrays."""
         try:
-            cur.execute("SELECT * FROM arrays WHERE system_id IS NOT NULL ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(arrays)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM arrays WHERE system_id IS NOT NULL {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
@@ -212,7 +216,11 @@ class HierarchyLoader:
     def _load_battery_arrays(self, cur) -> List[sqlite3.Row]:
         """Load all battery arrays."""
         try:
-            cur.execute("SELECT * FROM battery_arrays ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(battery_arrays)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM battery_arrays {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
@@ -239,7 +247,11 @@ class HierarchyLoader:
     def _load_inverters(self, cur) -> List[sqlite3.Row]:
         """Load all inverters."""
         try:
-            cur.execute("SELECT * FROM inverters ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(inverters)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM inverters {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
@@ -250,7 +262,11 @@ class HierarchyLoader:
     def _load_battery_packs(self, cur) -> List[sqlite3.Row]:
         """Load all battery packs."""
         try:
-            cur.execute("SELECT * FROM battery_packs WHERE battery_array_id IS NOT NULL ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(battery_packs)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM battery_packs WHERE battery_array_id IS NOT NULL {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
@@ -302,7 +318,11 @@ class HierarchyLoader:
     def _load_meters(self, cur) -> List[sqlite3.Row]:
         """Load all meters."""
         try:
-            cur.execute("SELECT * FROM meters ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(meters)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM meters {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():

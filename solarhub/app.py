@@ -457,7 +457,7 @@ class SolarApp:
         # Run device discovery BEFORE initializing inverters
         # This allows us to update ports if devices are found on different ports
         discovered = []
-        if self.discovery_service and self.cfg.discovery.scan_on_startup:
+        if hasattr(self, 'discovery_service') and self.discovery_service and self.cfg.discovery.scan_on_startup:
             try:
                 log.info("Running device discovery on startup (before initializing devices)...")
                 discovered, _ = await self.discovery_service.discover_devices(
