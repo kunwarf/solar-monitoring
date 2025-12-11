@@ -170,6 +170,29 @@ class EnergyCalculator:
         finally:
             conn.close()
     
+    def _get_inverter_system_id_and_array_id(self, cursor, inverter_id: str) -> tuple:
+        """Get system_id and array_id for an inverter from database."""
+        try:
+            cursor.execute("SELECT system_id, array_id FROM inverters WHERE inverter_id = ?", (inverter_id,))
+            result = cursor.fetchone()
+            if result:
+                return result[0], result[1]
+            # Fallback: try to get from array if inverter not in catalog
+            cursor.execute("""
+                SELECT a.system_id, a.array_id FROM arrays a
+                JOIN energy_samples e ON e.array_id = a.array_id
+                WHERE e.inverter_id = ?
+                LIMIT 1
+            """, (inverter_id,))
+            result = cursor.fetchone()
+            if result:
+                return result[0], result[1]
+            # Final fallback: default system
+            return 'system', None
+        except sqlite3.OperationalError:
+            # Table might not exist yet
+            return 'system', None
+    
     def store_hourly_energy(self, inverter_id: str, hour_start: datetime, energy_data: Dict[str, float]):
         """Store calculated energy data in the hourly_energy table."""
         conn = sqlite3.connect(self.db_path)
@@ -183,16 +206,21 @@ class EnergyCalculator:
             date = hour_start_configured.strftime('%Y-%m-%d')
             hour = hour_start_configured.hour
             
+            # Get system_id and array_id from database
+            system_id, array_id = self._get_inverter_system_id_and_array_id(cursor, inverter_id)
+            
             cursor.execute("""
                 INSERT OR REPLACE INTO hourly_energy 
-                (inverter_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
+                (inverter_id, array_id, system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
                  battery_charge_energy_kwh, battery_discharge_energy_kwh,
                  grid_import_energy_kwh, grid_export_energy_kwh,
                  avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
                  sample_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 inverter_id,
+                array_id,
+                system_id,
                 date,
                 hour,
                 energy_data['solar_energy_kwh'],
