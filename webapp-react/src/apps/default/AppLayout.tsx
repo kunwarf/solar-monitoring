@@ -1,15 +1,16 @@
 /**
  * Default Application Layout
  * This is the layout for the default solar monitoring app
+ * Updated to use hierarchy objects from the common API layer
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useMobile } from '../../hooks/useMobile'
-import { api } from '../../lib/api'
-import { ArraysResponse, ArrayInfo } from '../../types/telemetry'
+import { useAllSystems } from '../../api/hooks/useHierarchyObjects'
 import { SharedSidebar } from '../../components/SharedSidebar'
 import { MobileBottomNav } from '../../components/MobileBottomNav'
+import { ArrayInfo } from '../../types/telemetry'
 // Import main styles to get CSS variables for consistent theming
 import '../../styles.css'
 
@@ -26,22 +27,30 @@ export const ArrayContext = React.createContext<{
 
 export const DefaultAppLayout: React.FC = () => {
   const { isMobile } = useMobile()
-  const [arrays, setArrays] = useState<ArrayInfo[]>([])
+  const systems = useAllSystems()
   const [selectedArray, setSelectedArray] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchArrays = async () => {
-      try {
-        const response: ArraysResponse = await api.get('/api/arrays')
-        if (response.arrays && response.arrays.length > 0) {
-          setArrays(response.arrays)
-        }
-      } catch (error) {
-        console.error('Error loading arrays:', error)
-      }
-    }
-    fetchArrays()
-  }, [])
+  // Transform hierarchy objects to ArrayInfo format for backward compatibility
+  const arrays: ArrayInfo[] = useMemo(() => {
+    const arrayList: ArrayInfo[] = []
+    
+    systems.forEach(system => {
+      system.inverterArrays.forEach(invArray => {
+        arrayList.push({
+          id: invArray.id,
+          name: invArray.name,
+          inverter_ids: invArray.inverters.map(inv => inv.id),
+          inverter_count: invArray.inverters.length,
+          attached_pack_ids: invArray.attachedBatteryArrayId 
+            ? [invArray.attachedBatteryArrayId] 
+            : [],
+          pack_count: invArray.attachedBatteryArrayId ? 1 : 0,
+        })
+      })
+    })
+    
+    return arrayList
+  }, [systems])
 
   return (
     <ArrayContext.Provider value={{ arrays, selectedArray, setSelectedArray }}>
