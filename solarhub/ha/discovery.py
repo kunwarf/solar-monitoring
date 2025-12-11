@@ -112,13 +112,19 @@ class HADiscoveryPublisher:
         return device_info
 
     # Public API expected by app.py
-    def publish_all_for_inverter(self, runtime, inverter_count: int = 1) -> None:
+    def publish_all_for_inverter(self, runtime, inverter_count: int = 1, array_id: Optional[str] = None) -> None:
         """
-        Publish all registers for an inverter.
+        Publish all registers for an inverter according to Telemetry & Hierarchy Specification.
+        
+        Publishes:
+        - All register-based sensors (existing functionality)
+        - Calculated power fields (load_power, solar_power, grid_power, battery_power)
+        - Energy sensors (cumulative and daily) if not already in registers
         
         Args:
             runtime: InverterRuntime object
             inverter_count: Number of inverters in the system (default: 1)
+            array_id: Optional array ID for via_device relationship
         """
         regs = getattr(runtime.adapter, "regs", []) or []
         
@@ -148,30 +154,44 @@ class HADiscoveryPublisher:
             if is_phase_register:
                 # Only publish phase registers for three-phase inverters
                 if metadata and metadata.phase_type == "three":
-                    self.publish_register(runtime, r)
+                    self.publish_register(runtime, r, array_id=array_id)
                 # Skip for single-phase inverters
                 continue
             
-            self.publish_register(runtime, r)
+            self.publish_register(runtime, r, array_id=array_id)
         
         # Publish calculated/standardized fields that might not be registers
         # These are in the MQTT payload but need explicit HA discovery entities
-        self._publish_calculated_fields(runtime)
+        self._publish_calculated_fields(runtime, array_id=array_id)
     
-    def _publish_calculated_fields(self, runtime) -> None:
+    def _publish_calculated_fields(self, runtime, array_id: Optional[str] = None) -> None:
         """
         Publish HA discovery for calculated/standardized fields that are in the MQTT payload
         but might not be registers (e.g., pv_power_w which is calculated from pv1_power_w + pv2_power_w).
+        Also publishes energy sensors according to Telemetry & Hierarchy Specification.
+        
+        Args:
+            runtime: InverterRuntime object
+            array_id: Optional array ID for via_device relationship
         """
         device_id = getattr(runtime.cfg, "id", "inverter")
         regs_topic = self._regs_topic(device_id)
         
-        # List of calculated fields that should always be published
-        calculated_fields = [
+        # Get device_info with via_device if array_id is provided
+        device_info = self._device_block(runtime)
+        if array_id:
+            device_info["via_device"] = f"array:{array_id}"
+        
+        # List of calculated power fields that should always be published
+        calculated_power_fields = [
             ("pv_power_w", "PV Power", "W", "power"),
+            ("solar_power", "Solar Power", "W", "power"),  # Alias for pv_power_w
+            ("load_power", "Load Power", "W", "power"),
+            ("grid_power", "Grid Power", "W", "power"),  # positive = import, negative = export
+            ("battery_power", "Battery Power", "W", "power"),  # positive = discharge, negative = charge
         ]
         
-        for field_key, name, unit, device_class in calculated_fields:
+        for field_key, name, unit, device_class in calculated_power_fields:
             object_id = _entity_id(runtime, field_key)
             
             # Check if this field was already published as a register
@@ -190,8 +210,8 @@ class HADiscoveryPublisher:
                 "name": name,
                 "unique_id": object_id,
                 "state_topic": regs_topic,
-                "value_template": f"{{{{ value_json.{field_key} }}}}",
-                "device": self._device_block(runtime),
+                "value_template": f"{{{{ value_json.{field_key} | default(value_json.{field_key.replace('_power', '_power_w')}, 0) }}}}",
+                "device": device_info,
                 "unit_of_measurement": unit,
                 "device_class": device_class,
                 "state_class": "measurement",
@@ -200,9 +220,60 @@ class HADiscoveryPublisher:
             disc_topic = self._disc_topic("sensor", object_id)
             try:
                 self.mqtt.pub(disc_topic, cfg, retain=True)
-                log.debug(f"Published calculated field discovery: {disc_topic}")
+                log.debug(f"Published calculated power field discovery: {disc_topic}")
             except Exception as e:
-                log.error(f"Failed to publish calculated field discovery to {disc_topic}: {e}", exc_info=True)
+                log.error(f"Failed to publish calculated power field discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Energy sensors (cumulative and daily) - these may not be in registers, add them
+        # Note: These will be populated from hourly_energy table when telemetry is published
+        energy_sensors = [
+            # Cumulative energy
+            ("total_load_energy", "Total Load Energy", "kWh", "energy", "total_increasing"),
+            ("total_grid_import", "Total Grid Import", "kWh", "energy", "total_increasing"),
+            ("total_grid_export", "Total Grid Export", "kWh", "energy", "total_increasing"),
+            ("total_solar_energy", "Total Solar Energy", "kWh", "energy", "total_increasing"),
+            ("total_battery_discharge", "Total Battery Discharge", "kWh", "energy", "total_increasing"),
+            ("total_battery_charge", "Total Battery Charge", "kWh", "energy", "total_increasing"),
+            # Daily energy
+            ("today_load_energy", "Today Load Energy", "kWh", "energy", "total_increasing"),
+            ("today_grid_import", "Today Grid Import", "kWh", "energy", "total_increasing"),
+            ("today_grid_export", "Today Grid Export", "kWh", "energy", "total_increasing"),
+            ("today_solar_energy", "Today Solar Energy", "kWh", "energy", "total_increasing"),
+            ("today_battery_discharge", "Today Battery Discharge", "kWh", "energy", "total_increasing"),
+            ("today_battery_charge", "Today Battery Charge", "kWh", "energy", "total_increasing"),
+        ]
+        
+        for field_key, name, unit, device_class, state_class in energy_sensors:
+            object_id = _entity_id(runtime, field_key)
+            
+            # Check if this field was already published as a register
+            regs = getattr(runtime.adapter, "regs", []) or []
+            already_published = any(
+                r.get("id") == field_key or 
+                r.get("standard_id") == field_key
+                for r in regs
+            )
+            
+            if already_published:
+                continue  # Skip if already published as a register
+            
+            cfg: Dict[str, Any] = {
+                "name": name,
+                "unique_id": object_id,
+                "state_topic": regs_topic,
+                "value_template": f"{{{{ value_json.{field_key} | default(0) }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": state_class,
+            }
+            
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published calculated energy field discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish calculated energy field discovery to {disc_topic}: {e}", exc_info=True)
 
     def publish_all(self, runtime, register_specs: Optional[List[Dict[str, Any]]] = None) -> None:
         if register_specs:
@@ -224,7 +295,7 @@ class HADiscoveryPublisher:
         """
         self.publish_all_for_inverter(runtime, inverter_count)
 
-    def publish_register(self, runtime, r: Dict[str, Any]) -> None:
+    def publish_register(self, runtime, r: Dict[str, Any], array_id: Optional[str] = None) -> None:
         component = _component_for_register(r)
 
         # decide field key used in flat /regs
@@ -269,12 +340,17 @@ class HADiscoveryPublisher:
         object_id = _entity_id(runtime, field_key)
         regs_topic = self._regs_topic(device_id)
 
+        # Get device_info with via_device if array_id is provided
+        device_info = self._device_block(runtime)
+        if array_id:
+            device_info["via_device"] = f"array:{array_id}"
+
         cfg: Dict[str, Any] = {
             "name": name or reg_id or field_key.replace("_", " ").title(),
             "unique_id": object_id,
             "state_topic": regs_topic,
             "value_template": f"{{{{ value_json.{field_key} }}}}",
-            "device": self._device_block(runtime),
+            "device": device_info,
         }
         
         # Add unit of measurement and energy device class for sensors
@@ -667,14 +743,20 @@ class HADiscoveryPublisher:
             "via_device": f"battery_bank:{bank_id}",
         }
     
-    def publish_battery_unit_entities(self, bank_id: str, unit_power: int, bank_name: Optional[str] = None) -> None:
+    def publish_battery_unit_entities(self, bank_id: str, unit_power: int, bank_name: Optional[str] = None, pack_id: Optional[str] = None) -> None:
         """
-        Publish Home Assistant discovery entities for an individual battery unit.
+        Publish Home Assistant discovery entities for an individual battery unit according to Telemetry & Hierarchy Specification.
+        
+        Publishes:
+        - Real-time battery power & basic telemetry (battery_power, pack_voltage, pack_current, state_of_charge, temperature)
+        - Cumulative energy telemetry (total_battery_discharge, total_battery_charge)
+        - Daily energy telemetry (today_battery_discharge, today_battery_charge)
         
         Args:
             bank_id: Battery bank ID
             unit_power: Battery unit power/ID (from BatteryUnit.power)
             bank_name: Optional bank name
+            pack_id: Optional pack ID (for via_device relationships)
         """
         device_id = f"battery_{_sanitize_key(bank_id)}_unit_{unit_power}"
         device_name = f"{bank_name or bank_id.replace('_', ' ').title()} Battery {unit_power}"
@@ -684,20 +766,111 @@ class HADiscoveryPublisher:
         # Use helper method to ensure device_info is consistent with cell entities
         device_info = self._get_battery_unit_device_info(bank_id, unit_power, bank_name)
         
-        # Battery unit sensors
-        sensors = [
-            ("soc", "SOC", "%", "battery"),
-            ("voltage", "Voltage", "V", "voltage"),
-            ("current", "Current", "A", "current"),
-            ("power", "Power", "W", "power"),  # Calculated: voltage * current
+        # Update via_device to use pack_id if available
+        if pack_id:
+            device_info["via_device"] = f"pack:{pack_id}"
+        # Otherwise keep existing via_device from _get_battery_unit_device_info (battery_bank)
+        
+        # Real-time battery power & basic telemetry sensors
+        power_sensors = [
+            ("battery_power", "Battery Power", "W", "power"),  # or "power" field
+            ("pack_voltage", "Pack Voltage", "V", "voltage"),  # or "voltage" field
+            ("pack_current", "Pack Current", "A", "current"),  # or "current" field
+            ("state_of_charge", "State of Charge", "%", "battery"),  # or "soc" field
             ("temperature", "Temperature", "°C", "temperature"),
+        ]
+        
+        for field_key, name, unit, device_class in power_sensors:
+            # Map standardized names to actual field names in telemetry
+            # Try standardized name first, then fallback to common variations
+            actual_field = field_key
+            if field_key == "pack_voltage":
+                actual_field = "voltage"  # Fallback
+            elif field_key == "pack_current":
+                actual_field = "current"  # Fallback
+            elif field_key == "state_of_charge":
+                actual_field = "soc"  # Fallback
+            
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                # Try standardized field first, then fallback
+                "value_template": f"{{{{ value_json.{actual_field} | default(value_json.{field_key}, 0) }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "measurement",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery unit power sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery unit power sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Cumulative energy sensors (kWh) - total_increasing state_class
+        # Note: Battery unit energy would need to be calculated from battery_unit_samples
+        # For now, we'll add the sensors but they may not have data until we implement unit-level energy aggregation
+        cumulative_energy_sensors = [
+            ("total_battery_discharge", "Total Battery Discharge", "kWh", "energy"),
+            ("total_battery_charge", "Total Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in cumulative_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} | default(0) }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery unit cumulative energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery unit cumulative energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Daily energy sensors (kWh) - total_increasing state_class (resets daily)
+        daily_energy_sensors = [
+            ("today_battery_discharge", "Today Battery Discharge", "kWh", "energy"),
+            ("today_battery_charge", "Today Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in daily_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} | default(0) }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",  # Resets daily
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery unit daily energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery unit daily energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Additional status sensors (keep existing)
+        status_sensors = [
             ("basic_st", "Basic Status", None, None),
             ("volt_st", "Voltage Status", None, None),
             ("current_st", "Current Status", None, None),
             ("temp_st", "Temperature Status", None, None),
         ]
         
-        for field_key, name, unit, device_class in sensors:
+        for field_key, name, unit, device_class in status_sensors:
             object_id = f"{device_id}_{field_key}"
             cfg = {
                 "name": f"{device_name} {name}",
@@ -706,22 +879,18 @@ class HADiscoveryPublisher:
                 "value_template": f"{{{{ value_json.{field_key} }}}}",
                 "device": device_info,
             }
-            
             if unit:
                 cfg["unit_of_measurement"] = unit
             if device_class:
                 cfg["device_class"] = device_class
-            if device_class in ("battery", "voltage", "current", "temperature", "power"):
-                cfg["state_class"] = "measurement"
-            
             disc_topic = self._disc_topic("sensor", object_id)
             try:
                 self.mqtt.pub(disc_topic, cfg, retain=True)
-                log.debug(f"Published battery unit sensor discovery: {disc_topic}")
+                log.debug(f"Published battery unit status sensor discovery: {disc_topic}")
             except Exception as e:
-                log.error(f"Failed to publish battery unit sensor discovery to {disc_topic}: {e}", exc_info=True)
+                log.error(f"Failed to publish battery unit status sensor discovery to {disc_topic}: {e}", exc_info=True)
         
-        log.info(f"Published HA discovery for battery unit {unit_power} in bank {bank_id}")
+        log.info(f"Published HA discovery for battery unit {unit_power} in bank {bank_id} with {len(power_sensors) + len(cumulative_energy_sensors) + len(daily_energy_sensors) + len(status_sensors)} sensors")
     
     def publish_battery_cell_entities(self, bank_id: str, unit_power: int, cell_index: int, bank_name: Optional[str] = None) -> None:
         """

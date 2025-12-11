@@ -612,9 +612,16 @@ class SolarApp:
                 # Publish discovery now (device model/SN may be generic for the first few seconds)
                 # Get inverter count for metadata
                 inverter_count = len(self.inverters) if self.inverters else 1
+                # Get array_id from hierarchy or config
+                array_id = None
+                if hasattr(self, '_hierarchy_inverters') and rt.cfg.id in self._hierarchy_inverters:
+                    hierarchy_inverter = self._hierarchy_inverters[rt.cfg.id]
+                    array_id = hierarchy_inverter.array_id
+                elif hasattr(rt.cfg, 'array_id') and rt.cfg.array_id:
+                    array_id = rt.cfg.array_id
                 try:
-                    self.ha.publish_all_for_inverter(rt, inverter_count)
-                    log.info(f"Published HA discovery for inverter {rt.cfg.id}")
+                    self.ha.publish_all_for_inverter(rt, inverter_count, array_id=array_id)
+                    log.info(f"Published HA discovery for inverter {rt.cfg.id} (array: {array_id})")
                 except Exception as e:
                     log.error(f"Failed to publish HA discovery for inverter {rt.cfg.id}: {e}", exc_info=True)
 
