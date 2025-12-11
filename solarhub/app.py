@@ -82,7 +82,11 @@ class SolarApp:
         from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
         self._build_runtime_objects(cfg)
         from solarhub.array_aggregator import ArrayAggregator
+        from solarhub.system_aggregator import SystemAggregator
+        from solarhub.battery_array_aggregator import BatteryArrayAggregator
         self.array_aggregator = ArrayAggregator()
+        self.system_aggregator = SystemAggregator()
+        self.battery_array_aggregator = BatteryArrayAggregator()
     
     def _build_runtime_objects(self, cfg: HubConfig):
         """Build runtime objects from hierarchy (database-first, config.yaml fallback)."""
@@ -1857,9 +1861,11 @@ class SolarApp:
             self._reconnecting = False
     
     async def _energy_calculator_hourly_loop(self):
-        """Background task that runs energy calculator every hour at :00 minutes."""
+        """Background task that runs energy calculator every hour at :00 minutes.
+        Also calculates and stores array and system hourly energy aggregations."""
         from datetime import datetime, timedelta
         from solarhub.timezone_utils import now_configured
+        from solarhub.energy_calculator import EnergyCalculator
         
         log.info("Starting energy calculator hourly background task")
         last_run_hour = None
@@ -1919,24 +1925,77 @@ class SolarApp:
                 log.error(f"Failed to calculate energy for inverter {rt.cfg.id}: {e}", exc_info=True)
                 continue
         
-        # Process arrays (aggregate from member inverters)
-        if self.arrays:
+        # Process arrays (aggregate from member inverters and store in array_hourly_energy)
+        energy_calc = EnergyCalculator(self.logger.path)
+        
+        # Use hierarchy if available, otherwise fallback to config arrays
+        if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+            # Process arrays from hierarchy
+            for system_id, system in self.hierarchy_systems.items():
+                for inverter_array in system.inverter_arrays:
+                    array_id = inverter_array.id
+                    inverter_ids = inverter_array.inverter_ids
+                    
+                    if not inverter_ids:
+                        continue
+                    
+                    try:
+                        log.info(f"Processing energy calculation for array: {array_id} (system: {system_id})")
+                        
+                        # Calculate and store array hourly energy
+                        energy_calc.calculate_and_store_array_hourly_energy(
+                            array_id=array_id,
+                            system_id=system_id,
+                            inverter_ids=inverter_ids,
+                            hour_start=hour_start
+                        )
+                        
+                        log.info(f"Array energy calculation and storage completed for {array_id}")
+                        
+                    except Exception as e:
+                        log.error(f"Failed to calculate energy for array {array_id}: {e}", exc_info=True)
+                        continue
+                
+                # Calculate and store system hourly energy
+                try:
+                    array_ids = [arr.id for arr in system.inverter_arrays]
+                    if array_ids:
+                        log.info(f"Processing energy calculation for system: {system_id}")
+                        energy_calc.calculate_and_store_system_hourly_energy(
+                            system_id=system_id,
+                            array_ids=array_ids,
+                            hour_start=hour_start
+                        )
+                        log.info(f"System energy calculation and storage completed for {system_id}")
+                except Exception as e:
+                    log.error(f"Failed to calculate energy for system {system_id}: {e}", exc_info=True)
+        elif self.arrays:
+            # Fallback to config arrays
             for array_id, array_obj in self.arrays.items():
                 try:
                     log.info(f"Processing energy calculation for array: {array_id}")
                     
-                    # Calculate array energy by aggregating from member inverters
-                    hour_end = hour_start + timedelta(hours=1)
-                    array_energy = self.energy_calculator.calculate_array_hourly_energy(
+                    # Get system_id from hierarchy if available, otherwise use default
+                    system_id = "system"  # Default
+                    if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                        # Try to find system_id from hierarchy
+                        for sys_id, sys in self.hierarchy_systems.items():
+                            for inv_array in sys.inverter_arrays:
+                                if inv_array.id == array_id:
+                                    system_id = sys_id
+                                    break
+                            if system_id != "system":
+                                break
+                    
+                    # Calculate and store array hourly energy
+                    energy_calc.calculate_and_store_array_hourly_energy(
                         array_id=array_id,
+                        system_id=system_id,
                         inverter_ids=array_obj.inverter_ids,
-                        start_time=hour_start,
-                        end_time=hour_end
+                        hour_start=hour_start
                     )
                     
-                    # Note: We don't store array energy in a separate table yet,
-                    # but we could add an array_hourly_energy table if needed
-                    log.info(f"Array energy calculation completed for {array_id}: {array_energy}")
+                    log.info(f"Array energy calculation completed for {array_id}")
                     
                 except Exception as e:
                     log.error(f"Failed to calculate energy for array {array_id}: {e}", exc_info=True)
@@ -2351,8 +2410,14 @@ class SolarApp:
                 
                 # Aggregate array telemetry
                 if array_inverter_tels:
+                    # Get system_id from hierarchy if available
+                    system_id = None
+                    if hasattr(self, '_hierarchy_inverters') and rt.cfg.id in self._hierarchy_inverters:
+                        inverter_obj = self._hierarchy_inverters[rt.cfg.id]
+                        system_id = getattr(inverter_obj, 'system_id', None)
+                    
                     array_tel = self.array_aggregator.aggregate_array_telemetry(
-                        tel.array_id, array_inverter_tels, pack_tels, pack_configs
+                        tel.array_id, array_inverter_tels, pack_tels, pack_configs, system_id=system_id
                     )
                     # Store array sample
                     self.logger.insert_array_sample(array_tel)
@@ -2403,40 +2468,84 @@ class SolarApp:
                             break
 
     def _aggregate_and_publish_home_telemetry(self):
-        """Aggregate home telemetry from all arrays and publish to MQTT."""
+        """Aggregate system/home telemetry from all arrays and publish to MQTT."""
         if not self.array_last:
             return
         
         try:
-            # Get home-attached meters (array_id == "home")
-            meter_telemetry = {}
-            if self.cfg.meters:
-                for meter_cfg in self.cfg.meters:
-                    if getattr(meter_cfg, 'array_id', None) == "home":
-                        meter_id = meter_cfg.id
-                        if meter_id in self.meter_last:
-                            meter_telemetry[meter_id] = self.meter_last[meter_id]
+            # Group arrays by system_id from hierarchy
+            arrays_by_system: Dict[str, Dict[str, Any]] = {}
             
-            # Get all battery bank telemetry for aggregation
-            battery_bank_telemetry = {}
-            if isinstance(self.battery_last, dict):
-                battery_bank_telemetry = self.battery_last
-            elif self.battery_last:
-                # Legacy: single battery bank
-                battery_bank_telemetry["legacy"] = self.battery_last
+            # If we have hierarchy, group by system_id
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                for system_id, system in self.hierarchy_systems.items():
+                    arrays_by_system[system_id] = {}
+                    # Find arrays belonging to this system
+                    for array_id, array_tel in self.array_last.items():
+                        # Check if this array belongs to this system
+                        for inverter_array in system.inverter_arrays:
+                            if inverter_array.id == array_id:
+                                arrays_by_system[system_id][array_id] = array_tel
+                                break
+            else:
+                # Fallback: use default system_id
+                default_system_id = "system"
+                arrays_by_system[default_system_id] = self.array_last
             
-            # Aggregate home telemetry
-            home_tel = self.array_aggregator.aggregate_home_telemetry(
-                self.array_last, meter_telemetry, battery_bank_telemetry
-            )
-            
-            # Publish home telemetry to MQTT
-            home_id = getattr(self.cfg.home, "id", "home") if getattr(self.cfg, "home", None) else "home"
-            home_topic = f"{self.cfg.mqtt.base_topic}/home/{home_id}/state"
-            self.mqtt.pub(home_topic, home_tel.model_dump(), retain=False)
-            log.debug(f"Published home telemetry to {home_topic}")
+            # Aggregate and publish telemetry for each system
+            for system_id, system_arrays in arrays_by_system.items():
+                if not system_arrays:
+                    continue
+                
+                # Get system-attached meters
+                meter_telemetry = {}
+                meter_configs = {}
+                if hasattr(self, '_hierarchy_meters') and self._hierarchy_meters:
+                    for meter_id, meter_obj in self._hierarchy_meters.items():
+                        if getattr(meter_obj, 'system_id', None) == system_id:
+                            if meter_id in self.meter_last:
+                                meter_telemetry[meter_id] = self.meter_last[meter_id]
+                            # Get meter config for energy data lookup
+                            if self.cfg.meters:
+                                meter_cfg = next((m for m in self.cfg.meters if m.id == meter_id), None)
+                                if meter_cfg:
+                                    meter_configs[meter_id] = meter_cfg
+                else:
+                    # Fallback to config-based meter lookup
+                    if self.cfg.meters:
+                        for meter_cfg in self.cfg.meters:
+                            attachment_target = getattr(meter_cfg, 'attachment_target', None)
+                            if attachment_target == "system" or attachment_target == system_id:
+                                meter_id = meter_cfg.id
+                                if meter_id in self.meter_last:
+                                    meter_telemetry[meter_id] = self.meter_last[meter_id]
+                                meter_configs[meter_id] = meter_cfg
+                
+                # Get all battery bank telemetry for aggregation
+                battery_bank_telemetry = {}
+                if isinstance(self.battery_last, dict):
+                    battery_bank_telemetry = self.battery_last
+                elif self.battery_last:
+                    # Legacy: single battery bank
+                    battery_bank_telemetry["legacy"] = self.battery_last
+                
+                # Aggregate system telemetry using SystemAggregator
+                system_tel = self.system_aggregator.aggregate_system_telemetry(
+                    system_id, system_arrays, meter_telemetry, battery_bank_telemetry,
+                    meter_configs=meter_configs if meter_configs else None
+                )
+                
+                # Publish system telemetry to MQTT
+                system_topic = f"{self.cfg.mqtt.base_topic}/systems/{system_id}/state"
+                self.mqtt.pub(system_topic, system_tel.model_dump(), retain=False)
+                log.debug(f"Published system telemetry to {system_topic}")
+                
+                # Also publish to legacy home topic for backward compatibility
+                home_topic = f"{self.cfg.mqtt.base_topic}/home/{system_id}/state"
+                self.mqtt.pub(home_topic, system_tel.model_dump(), retain=False)
+                log.debug(f"Published home telemetry (legacy) to {home_topic}")
         except Exception as e:
-            log.warning(f"Failed to aggregate and publish home telemetry: {e}", exc_info=True)
+            log.warning(f"Failed to aggregate and publish system/home telemetry: {e}", exc_info=True)
 
     # --- Live telemetry access for API ---
     def get_now(self, inverter_id: str) -> Dict[str, Any] | None:
