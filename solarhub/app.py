@@ -2240,12 +2240,34 @@ class SolarApp:
             self.logger.insert_sample(rt.cfg.id, tel)
             
             # Aggregate and store array telemetry
-            if tel.array_id and tel.array_id in self.arrays:
+            # Use hierarchy arrays if available, otherwise fallback to config arrays
+            array = None
+            array_inverter_ids = []
+            attached_battery_array_id = None
+            
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                # Find array in hierarchy
+                for system in self.hierarchy_systems.values():
+                    for inv_array in system.inverter_arrays:
+                        if inv_array.array_id == tel.array_id:
+                            array_inverter_ids = inv_array.inverter_ids
+                            attached_battery_array_id = inv_array.attached_battery_array_id
+                            array = inv_array
+                            break
+                    if array:
+                        break
+            
+            # Fallback to config arrays
+            if not array and tel.array_id and tel.array_id in self.arrays:
                 array = self.arrays[tel.array_id]
+                array_inverter_ids = array.inverter_ids if hasattr(array, 'inverter_ids') else []
+                attached_battery_array_id = array.attached_pack_ids if hasattr(array, 'attached_pack_ids') else []
+            
+            if array and array_inverter_ids:
                 # Collect telemetry for all inverters in this array
                 array_inverter_tels = {}
                 for inv_rt in self.inverters:
-                    if inv_rt.cfg.id in array.inverter_ids:
+                    if inv_rt.cfg.id in array_inverter_ids:
                         inv_tel = getattr(inv_rt.adapter, 'last_tel', None)
                         if inv_tel:
                             array_inverter_tels[inv_rt.cfg.id] = inv_tel
@@ -2253,7 +2275,48 @@ class SolarApp:
                 # Get pack telemetry for attached packs
                 pack_tels = {}
                 pack_configs = {}
-                if self.cfg.battery_packs and self.cfg.attachments:
+                
+                # Use hierarchy battery arrays if available
+                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems and attached_battery_array_id:
+                    for system in self.hierarchy_systems.values():
+                        for bat_array in system.battery_arrays:
+                            if bat_array.battery_array_id == attached_battery_array_id:
+                                # Get packs from this battery array
+                                for pack in bat_array.battery_packs:
+                                    pack_id = pack.pack_id
+                                    if pack.nominal_kwh:
+                                        pack_configs[pack_id] = {
+                                            "nominal_kwh": pack.nominal_kwh,
+                                            "max_charge_kw": pack.max_charge_kw or 0.0,
+                                            "max_discharge_kw": pack.max_discharge_kw or 0.0,
+                                        }
+                                    
+                                    # Get battery telemetry
+                                    battery_telemetry = None
+                                    if isinstance(self.battery_last, dict):
+                                        battery_telemetry = self.battery_last.get(pack_id) or next(iter(self.battery_last.values())) if self.battery_last else None
+                                    else:
+                                        battery_telemetry = self.battery_last  # Legacy: single object
+                                    
+                                    if battery_telemetry:
+                                        from solarhub.array_models import BatteryPackTelemetry
+                                        pack_tel = BatteryPackTelemetry(
+                                            pack_id=pack_id,
+                                            array_id=tel.array_id,
+                                            ts=battery_telemetry.ts,
+                                            soc_pct=battery_telemetry.soc,
+                                            voltage_v=battery_telemetry.voltage,
+                                            current_a=battery_telemetry.current,
+                                            power_w=battery_telemetry.voltage * battery_telemetry.current if battery_telemetry.voltage and battery_telemetry.current else None,
+                                            temperature_c=battery_telemetry.temperature,
+                                        )
+                                        pack_tels[pack_id] = pack_tel
+                                break
+                        if pack_tels:
+                            break
+                
+                # Fallback to config-based pack lookup
+                if not pack_tels and self.cfg.battery_packs and self.cfg.attachments:
                     for att in self.cfg.attachments:
                         if att.array_id == tel.array_id and att.detached_at is None:
                             pack_id = att.pack_id
