@@ -72,6 +72,15 @@ class HADiscoveryPublisher:
 
     def _disc_topic(self, component: str, object_id: str) -> str:
         return f"{self.discovery_prefix}/{component}/{object_id}/config"
+    
+    def _clear_discovery_entity(self, component: str, object_id: str) -> None:
+        """Clear a discovery entity by publishing empty payload."""
+        topic = self._disc_topic(component, object_id)
+        try:
+            self.mqtt.pub(topic, "", retain=True)
+            log.debug(f"Cleared discovery entity: {topic}")
+        except Exception as e:
+            log.warning(f"Failed to clear discovery entity {topic}: {e}")
 
     def _regs_topic(self, device_id: str) -> str:
         return f"{self.base_topic}/{device_id}/regs"
@@ -1002,3 +1011,28 @@ class HADiscoveryPublisher:
             log.error(f"Failed to publish home battery SOC discovery to {disc_topic}: {e}", exc_info=True)
         
         log.info(f"Published HA discovery for home {home_id}")
+    
+    def clear_home_entities(self, home_id: str = "home") -> None:
+        """
+        Clear legacy home entities from MQTT discovery.
+        This removes old home discovery messages so new system entities can be published cleanly.
+        
+        Args:
+            home_id: Home ID to clear (default: "home")
+        """
+        device_id = f"home_{_sanitize_key(home_id)}"
+        
+        # Clear all home sensors
+        sensors = [
+            "total_pv_power_w",
+            "total_load_power_w",
+            "total_grid_power_w",
+            "total_batt_power_w",
+            "avg_batt_soc_pct",
+        ]
+        
+        for field_key in sensors:
+            object_id = f"{device_id}_{field_key}"
+            self._clear_discovery_entity("sensor", object_id)
+        
+        log.info(f"Cleared legacy home discovery entities for {home_id}")

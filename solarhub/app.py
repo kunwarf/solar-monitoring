@@ -994,24 +994,16 @@ class SolarApp:
                         except Exception as e:
                             log.error(f"Failed to publish battery array discovery for {battery_array_id}: {e}", exc_info=True)
             
-            # Publish HA discovery for home (legacy support - accumulated power from all arrays)
-            if getattr(self.cfg, "home", None):
-                home_cfg = self.cfg.home
-                home_id = getattr(home_cfg, "id", "home")
-                home_name = getattr(home_cfg, "name", None) or "Solar Home"
-                array_ids = list(self.arrays.keys()) if self.arrays else None
-                log.info(f"Publishing home discovery (legacy): home_id={home_id}, home_name={home_name}, array_ids={array_ids}")
+            # Clear legacy home entities from MQTT (to allow clean publishing of new system entities)
+            # Clear common home IDs that might have been used
+            legacy_home_ids = ["home", "system", "default"]
+            for home_id in legacy_home_ids:
                 try:
-                    self.ha.publish_home_entities(
-                        home_id=home_id,
-                        home_name=home_name,
-                        array_ids=array_ids
-                    )
-                    log.info(f"HA discovery published for home {home_id} (legacy, state topic: {self.cfg.mqtt.base_topic}/home/{home_id}/state)")
+                    self.ha.clear_home_entities(home_id)
                 except Exception as e:
-                    log.error(f"Failed to publish home discovery: {e}", exc_info=True)
+                    log.debug(f"Failed to clear legacy home entities for {home_id} (may not exist): {e}")
             
-            log.info("HA discovery published for arrays, battery packs, battery bank, systems, battery arrays, and home")
+            log.info("HA discovery published for arrays, battery packs, battery bank, systems, and battery arrays (legacy home entities cleared)")
         else:
             log.info("HA discovery disabled in configuration")
         
