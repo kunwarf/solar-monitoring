@@ -75,7 +75,7 @@ class SolarApp:
         self.smart_schedulers: Dict[str, SmartScheduler] = {}  # Per-array schedulers: array_id -> SmartScheduler
         self.logger = DataLogger()
         self._energy_acc: Dict[str, Dict[str, Any]] = {}
-        self.ha = HADiscoveryPublisher(self.mqtt, cfg.mqtt.base_topic)
+        self.ha = HADiscoveryPublisher(self.mqtt, cfg.mqtt.base_topic, db_path=self.logger.path)
         self.array_last: Dict[str, Any] = {}  # Store array telemetry for home aggregation
         
         # Array support

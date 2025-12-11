@@ -1,7 +1,10 @@
 # discovery.py
 import json
 import logging
+import sqlite3
 from typing import Any, Dict, List, Optional
+from datetime import datetime, date
+from solarhub.timezone_utils import now_configured, to_configured
 
 log = logging.getLogger("solarhub.ha.discovery")
 
@@ -65,10 +68,11 @@ class HADiscoveryPublisher:
       - RW entities write to:    <base>/<id>/write
     """
 
-    def __init__(self, mqtt_client, base_topic: str, discovery_prefix: str = DISCOVERY_PREFIX) -> None:
+    def __init__(self, mqtt_client, base_topic: str, discovery_prefix: str = DISCOVERY_PREFIX, db_path: Optional[str] = None) -> None:
         self.mqtt = mqtt_client
         self.base_topic = base_topic.rstrip("/")
         self.discovery_prefix = discovery_prefix.rstrip("/")
+        self.db_path = db_path  # Database path for energy calculations
 
     def _disc_topic(self, component: str, object_id: str) -> str:
         return f"{self.discovery_prefix}/{component}/{object_id}/config"
@@ -311,9 +315,84 @@ class HADiscoveryPublisher:
         """Get MQTT topic for home state."""
         return f"{self.base_topic}/home/{home_id}/state"
     
+    def _get_array_energy_totals(self, array_id: str) -> Dict[str, float]:
+        """
+        Get cumulative and daily energy totals for an array from array_hourly_energy table.
+        
+        Returns:
+            Dictionary with cumulative and daily energy values in kWh
+        """
+        if not self.db_path:
+            return {}
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get cumulative totals (sum of all hourly energy)
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(solar_energy_kwh), 0) as total_solar,
+                    COALESCE(SUM(load_energy_kwh), 0) as total_load,
+                    COALESCE(SUM(grid_import_energy_kwh), 0) as total_grid_import,
+                    COALESCE(SUM(grid_export_energy_kwh), 0) as total_grid_export,
+                    COALESCE(SUM(battery_charge_energy_kwh), 0) as total_battery_charge,
+                    COALESCE(SUM(battery_discharge_energy_kwh), 0) as total_battery_discharge
+                FROM array_hourly_energy
+                WHERE array_id = ?
+            """, (array_id,))
+            
+            row = cursor.fetchone()
+            cumulative = {
+                "total_solar_energy": row[0] if row else 0.0,
+                "total_load_energy": row[1] if row else 0.0,
+                "total_grid_import": row[2] if row else 0.0,
+                "total_grid_export": row[3] if row else 0.0,
+                "total_battery_charge": row[4] if row else 0.0,
+                "total_battery_discharge": row[5] if row else 0.0,
+            }
+            
+            # Get today's totals (sum of today's hourly energy)
+            today = now_configured().date()
+            today_str = today.strftime('%Y-%m-%d')
+            
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(solar_energy_kwh), 0) as today_solar,
+                    COALESCE(SUM(load_energy_kwh), 0) as today_load,
+                    COALESCE(SUM(grid_import_energy_kwh), 0) as today_grid_import,
+                    COALESCE(SUM(grid_export_energy_kwh), 0) as today_grid_export,
+                    COALESCE(SUM(battery_charge_energy_kwh), 0) as today_battery_charge,
+                    COALESCE(SUM(battery_discharge_energy_kwh), 0) as today_battery_discharge
+                FROM array_hourly_energy
+                WHERE array_id = ? AND date = ?
+            """, (array_id, today_str))
+            
+            row = cursor.fetchone()
+            daily = {
+                "today_solar_energy": row[0] if row else 0.0,
+                "today_load_energy": row[1] if row else 0.0,
+                "today_grid_import": row[2] if row else 0.0,
+                "today_grid_export": row[3] if row else 0.0,
+                "today_battery_charge": row[4] if row else 0.0,
+                "today_battery_discharge": row[5] if row else 0.0,
+            }
+            
+            conn.close()
+            return {**cumulative, **daily}
+            
+        except Exception as e:
+            log.error(f"Failed to get array energy totals for {array_id}: {e}", exc_info=True)
+            return {}
+    
     def publish_array_entities(self, array_id: str, array_name: Optional[str] = None, inverter_ids: Optional[List[str]] = None, pack_ids: Optional[List[str]] = None, system_id: Optional[str] = None) -> None:
         """
-        Publish Home Assistant discovery entities for an array.
+        Publish Home Assistant discovery entities for an inverter array according to Telemetry & Hierarchy Specification.
+        
+        Publishes:
+        - Real-time power telemetry (load_power, solar_power, grid_power, battery_power)
+        - Cumulative energy telemetry (total_*)
+        - Daily energy telemetry (today_*)
         
         Args:
             array_id: Array ID
@@ -329,27 +408,26 @@ class HADiscoveryPublisher:
         device_info = {
             "identifiers": [f"array:{array_id}"],
             "name": device_name,
-            "model": "Solar Array",
+            "model": "Inverter Array",
             "manufacturer": "SolarHub",
         }
         
-        # Add via_device relationships - prefer system, then first inverter
-        # Note: via_device should be a single string, not a list (HA MQTT discovery spec)
+        # Add via_device relationship - prefer system
         if system_id:
             device_info["via_device"] = f"system:{system_id}"
         elif inverter_ids:
-            # Use the first inverter as the via_device (HA only supports one)
+            # Fallback to first inverter if no system
             device_info["via_device"] = f"inverter:{inverter_ids[0]}"
         
-        # Array-level power sensors
-        sensors = [
-            ("pv_power_w", "PV Power", "W", "power"),
-            ("load_power_w", "Load Power", "W", "power"),
-            ("grid_power_w", "Grid Power", "W", "power"),
-            ("batt_power_w", "Battery Power", "W", "power"),
+        # Real-time power sensors (W)
+        power_sensors = [
+            ("load_power", "Load Power", "W", "power"),
+            ("solar_power", "Solar Power", "W", "power"),
+            ("grid_power", "Grid Power", "W", "power"),  # positive = import, negative = export
+            ("battery_power", "Battery Power", "W", "power"),  # positive = discharge, negative = charge
         ]
         
-        for field_key, name, unit, device_class in sensors:
+        for field_key, name, unit, device_class in power_sensors:
             object_id = f"{device_id}_{field_key}"
             cfg = {
                 "name": f"{device_name} {name}",
@@ -364,46 +442,69 @@ class HADiscoveryPublisher:
             disc_topic = self._disc_topic("sensor", object_id)
             try:
                 self.mqtt.pub(disc_topic, cfg, retain=True)
-                log.debug(f"Published array sensor discovery: {disc_topic}")
+                log.debug(f"Published array power sensor discovery: {disc_topic}")
             except Exception as e:
-                log.error(f"Failed to publish array sensor discovery to {disc_topic}: {e}", exc_info=True)
+                log.error(f"Failed to publish array power sensor discovery to {disc_topic}: {e}", exc_info=True)
         
-        # Battery SOC sensor
-        object_id = f"{device_id}_batt_soc_pct"
-        cfg = {
-            "name": f"{device_name} Battery SOC",
-            "unique_id": object_id,
-            "state_topic": state_topic,
-            "value_template": "{{ value_json.batt_soc_pct }}",
-            "device": device_info,
-            "unit_of_measurement": "%",
-            "device_class": "battery",
-            "state_class": "measurement",
-        }
-        disc_topic = self._disc_topic("sensor", object_id)
-        try:
-            self.mqtt.pub(disc_topic, cfg, retain=True)
-            log.debug(f"Published array battery SOC discovery: {disc_topic}")
-        except Exception as e:
-            log.error(f"Failed to publish array battery SOC discovery to {disc_topic}: {e}", exc_info=True)
+        # Cumulative energy sensors (kWh) - total_increasing state_class
+        cumulative_energy_sensors = [
+            ("total_load_energy", "Total Load Energy", "kWh", "energy"),
+            ("total_grid_import", "Total Grid Import", "kWh", "energy"),
+            ("total_grid_export", "Total Grid Export", "kWh", "energy"),
+            ("total_solar_energy", "Total Solar Energy", "kWh", "energy"),
+            ("total_battery_discharge", "Total Battery Discharge", "kWh", "energy"),
+            ("total_battery_charge", "Total Battery Charge", "kWh", "energy"),
+        ]
         
-        # Array status sensor
-        object_id = f"{device_id}_status"
-        cfg = {
-            "name": f"{device_name} Status",
-            "unique_id": object_id,
-            "state_topic": state_topic,
-            "value_template": "{{ value_json.status }}",
-            "device": device_info,
-        }
-        disc_topic = self._disc_topic("sensor", object_id)
-        try:
-            self.mqtt.pub(disc_topic, cfg, retain=True)
-            log.debug(f"Published array status discovery: {disc_topic}")
-        except Exception as e:
-            log.error(f"Failed to publish array status discovery to {disc_topic}: {e}", exc_info=True)
+        for field_key, name, unit, device_class in cumulative_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published array cumulative energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish array cumulative energy sensor discovery to {disc_topic}: {e}", exc_info=True)
         
-        log.info(f"Published HA discovery for array {array_id}")
+        # Daily energy sensors (kWh) - total_increasing state_class (resets daily)
+        daily_energy_sensors = [
+            ("today_load_energy", "Today Load Energy", "kWh", "energy"),
+            ("today_grid_import", "Today Grid Import", "kWh", "energy"),
+            ("today_grid_export", "Today Grid Export", "kWh", "energy"),
+            ("today_solar_energy", "Today Solar Energy", "kWh", "energy"),
+            ("today_battery_discharge", "Today Battery Discharge", "kWh", "energy"),
+            ("today_battery_charge", "Today Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in daily_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",  # Resets daily
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published array daily energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish array daily energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        log.info(f"Published HA discovery for inverter array {array_id} with {len(power_sensors) + len(cumulative_energy_sensors) + len(daily_energy_sensors)} sensors")
     
     def publish_pack_entities(self, pack_id: str, pack_name: Optional[str] = None, array_id: Optional[str] = None, battery_array_id: Optional[str] = None, system_id: Optional[str] = None) -> None:
         """
@@ -806,14 +907,90 @@ class HADiscoveryPublisher:
         """Get MQTT topic for battery array state."""
         return f"{self.base_topic}/battery_arrays/{battery_array_id}/state"
     
-    def publish_system_entities(self, system_id: str, system_name: Optional[str] = None, array_ids: Optional[List[str]] = None) -> None:
+    def _get_system_energy_totals(self, system_id: str) -> Dict[str, float]:
         """
-        Publish Home Assistant discovery entities for system (accumulated power from all arrays).
+        Get cumulative and daily energy totals for a system from system_hourly_energy table.
+        
+        Returns:
+            Dictionary with cumulative and daily energy values in kWh
+        """
+        if not self.db_path:
+            return {}
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get cumulative totals (sum of all hourly energy)
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(solar_energy_kwh), 0) as total_solar,
+                    COALESCE(SUM(load_energy_kwh), 0) as total_load,
+                    COALESCE(SUM(grid_import_energy_kwh), 0) as total_grid_import,
+                    COALESCE(SUM(grid_export_energy_kwh), 0) as total_grid_export,
+                    COALESCE(SUM(battery_charge_energy_kwh), 0) as total_battery_charge,
+                    COALESCE(SUM(battery_discharge_energy_kwh), 0) as total_battery_discharge
+                FROM system_hourly_energy
+                WHERE system_id = ?
+            """, (system_id,))
+            
+            row = cursor.fetchone()
+            cumulative = {
+                "total_solar_energy": row[0] if row else 0.0,
+                "total_load_energy": row[1] if row else 0.0,
+                "total_grid_import": row[2] if row else 0.0,
+                "total_grid_export": row[3] if row else 0.0,
+                "total_battery_charge": row[4] if row else 0.0,
+                "total_battery_discharge": row[5] if row else 0.0,
+            }
+            
+            # Get today's totals (sum of today's hourly energy)
+            today = now_configured().date()
+            today_str = today.strftime('%Y-%m-%d')
+            
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(solar_energy_kwh), 0) as today_solar,
+                    COALESCE(SUM(load_energy_kwh), 0) as today_load,
+                    COALESCE(SUM(grid_import_energy_kwh), 0) as today_grid_import,
+                    COALESCE(SUM(grid_export_energy_kwh), 0) as today_grid_export,
+                    COALESCE(SUM(battery_charge_energy_kwh), 0) as today_battery_charge,
+                    COALESCE(SUM(battery_discharge_energy_kwh), 0) as today_battery_discharge
+                FROM system_hourly_energy
+                WHERE system_id = ? AND date = ?
+            """, (system_id, today_str))
+            
+            row = cursor.fetchone()
+            daily = {
+                "today_solar_energy": row[0] if row else 0.0,
+                "today_load_energy": row[1] if row else 0.0,
+                "today_grid_import": row[2] if row else 0.0,
+                "today_grid_export": row[3] if row else 0.0,
+                "today_battery_charge": row[4] if row else 0.0,
+                "today_battery_discharge": row[5] if row else 0.0,
+            }
+            
+            conn.close()
+            return {**cumulative, **daily}
+            
+        except Exception as e:
+            log.error(f"Failed to get system energy totals for {system_id}: {e}", exc_info=True)
+            return {}
+    
+    def publish_system_entities(self, system_id: str, system_name: Optional[str] = None, array_ids: Optional[List[str]] = None, meter_ids: Optional[List[str]] = None) -> None:
+        """
+        Publish Home Assistant discovery entities for system according to Telemetry & Hierarchy Specification.
+        
+        Publishes:
+        - Real-time power telemetry (load_power, solar_power, grid_power, battery_power)
+        - Cumulative energy telemetry (total_*)
+        - Daily energy telemetry (today_*)
         
         Args:
             system_id: System ID
             system_name: Optional system name
             array_ids: List of array IDs in this system (for via_device relationships)
+            meter_ids: List of meter IDs in this system (for via_device relationships)
         """
         device_id = f"system_{_sanitize_key(system_id)}"
         device_name = system_name or "Solar System"
@@ -824,23 +1001,18 @@ class HADiscoveryPublisher:
             "name": device_name,
             "model": "Solar System",
             "manufacturer": "SolarHub",
+            # System is top-level device, no via_device
         }
         
-        # Add via_device relationships if arrays are provided
-        # Note: via_device should be a single string, not a list (HA MQTT discovery spec)
-        if array_ids:
-            # Use the first array as the via_device (HA only supports one)
-            device_info["via_device"] = f"array:{array_ids[0]}"
-        
-        # System-level accumulated power sensors
-        sensors = [
-            ("total_pv_power_w", "Total Solar Power", "W", "power"),
-            ("total_load_power_w", "Total Load Power", "W", "power"),
-            ("total_grid_power_w", "Total Grid Power", "W", "power"),
-            ("total_batt_power_w", "Total Battery Power", "W", "power"),
+        # Real-time power sensors (W)
+        power_sensors = [
+            ("load_power", "Load Power", "W", "power"),
+            ("solar_power", "Solar Power", "W", "power"),
+            ("grid_power", "Grid Power", "W", "power"),  # positive = import, negative = export
+            ("battery_power", "Battery Power", "W", "power"),  # positive = discharge, negative = charge
         ]
         
-        for field_key, name, unit, device_class in sensors:
+        for field_key, name, unit, device_class in power_sensors:
             object_id = f"{device_id}_{field_key}"
             cfg = {
                 "name": f"{device_name} {name}",
@@ -855,34 +1027,140 @@ class HADiscoveryPublisher:
             disc_topic = self._disc_topic("sensor", object_id)
             try:
                 self.mqtt.pub(disc_topic, cfg, retain=True)
-                log.debug(f"Published system sensor discovery: {disc_topic}")
+                log.debug(f"Published system power sensor discovery: {disc_topic}")
             except Exception as e:
-                log.error(f"Failed to publish system sensor discovery to {disc_topic}: {e}", exc_info=True)
+                log.error(f"Failed to publish system power sensor discovery to {disc_topic}: {e}", exc_info=True)
         
-        # Battery SOC sensor
-        object_id = f"{device_id}_avg_batt_soc_pct"
-        cfg = {
-            "name": f"{device_name} Average Battery SOC",
-            "unique_id": object_id,
-            "state_topic": state_topic,
-            "value_template": "{{ value_json.avg_batt_soc_pct }}",
-            "device": device_info,
-            "unit_of_measurement": "%",
-            "device_class": "battery",
-            "state_class": "measurement",
-        }
-        disc_topic = self._disc_topic("sensor", object_id)
+        # Cumulative energy sensors (kWh) - total_increasing state_class
+        cumulative_energy_sensors = [
+            ("total_load_energy", "Total Load Energy", "kWh", "energy"),
+            ("total_grid_import", "Total Grid Import", "kWh", "energy"),
+            ("total_grid_export", "Total Grid Export", "kWh", "energy"),
+            ("total_solar_energy", "Total Solar Energy", "kWh", "energy"),
+            ("total_battery_discharge", "Total Battery Discharge", "kWh", "energy"),
+            ("total_battery_charge", "Total Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in cumulative_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published system cumulative energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish system cumulative energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Daily energy sensors (kWh) - total_increasing state_class (resets daily)
+        daily_energy_sensors = [
+            ("today_load_energy", "Today Load Energy", "kWh", "energy"),
+            ("today_grid_import", "Today Grid Import", "kWh", "energy"),
+            ("today_grid_export", "Today Grid Export", "kWh", "energy"),
+            ("today_solar_energy", "Today Solar Energy", "kWh", "energy"),
+            ("today_battery_discharge", "Today Battery Discharge", "kWh", "energy"),
+            ("today_battery_charge", "Today Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in daily_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",  # Resets daily
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published system daily energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish system daily energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        log.info(f"Published HA discovery for system {system_id} with {len(power_sensors) + len(cumulative_energy_sensors) + len(daily_energy_sensors)} sensors")
+    
+    def _get_battery_array_energy_totals(self, battery_array_id: str, pack_ids: List[str]) -> Dict[str, float]:
+        """
+        Get cumulative and daily energy totals for a battery array from battery_bank_hourly table.
+        
+        Args:
+            battery_array_id: Battery array ID
+            pack_ids: List of pack IDs in this array
+            
+        Returns:
+            Dictionary with cumulative and daily energy values in kWh
+        """
+        if not self.db_path or not pack_ids:
+            return {}
+        
         try:
-            self.mqtt.pub(disc_topic, cfg, retain=True)
-            log.debug(f"Published system battery SOC discovery: {disc_topic}")
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Create placeholders for pack_ids
+            placeholders = ','.join(['?'] * len(pack_ids))
+            
+            # Get cumulative totals (sum of all hourly energy for all packs in array)
+            cursor.execute(f"""
+                SELECT 
+                    COALESCE(SUM(charge_energy_kwh), 0) as total_charge,
+                    COALESCE(SUM(discharge_energy_kwh), 0) as total_discharge
+                FROM battery_bank_hourly
+                WHERE pack_id IN ({placeholders})
+            """, pack_ids)
+            
+            row = cursor.fetchone()
+            cumulative = {
+                "total_battery_charge": row[0] if row else 0.0,
+                "total_battery_discharge": row[1] if row else 0.0,
+            }
+            
+            # Get today's totals (sum of today's hourly energy)
+            today = now_configured().date()
+            today_str = today.strftime('%Y-%m-%d')
+            
+            cursor.execute(f"""
+                SELECT 
+                    COALESCE(SUM(charge_energy_kwh), 0) as today_charge,
+                    COALESCE(SUM(discharge_energy_kwh), 0) as today_discharge
+                FROM battery_bank_hourly
+                WHERE pack_id IN ({placeholders}) AND date = ?
+            """, pack_ids + [today_str])
+            
+            row = cursor.fetchone()
+            daily = {
+                "today_battery_charge": row[0] if row else 0.0,
+                "today_battery_discharge": row[1] if row else 0.0,
+            }
+            
+            conn.close()
+            return {**cumulative, **daily}
+            
         except Exception as e:
-            log.error(f"Failed to publish system battery SOC discovery to {disc_topic}: {e}", exc_info=True)
-        
-        log.info(f"Published HA discovery for system {system_id}")
+            log.error(f"Failed to get battery array energy totals for {battery_array_id}: {e}", exc_info=True)
+            return {}
     
     def publish_battery_array_entities(self, battery_array_id: str, battery_array_name: Optional[str] = None, pack_ids: Optional[List[str]] = None, system_id: Optional[str] = None) -> None:
         """
-        Publish Home Assistant discovery entities for a battery array.
+        Publish Home Assistant discovery entities for a battery array according to Telemetry & Hierarchy Specification.
+        
+        Publishes:
+        - Real-time battery power (battery_power)
+        - Cumulative energy telemetry (total_battery_discharge, total_battery_charge)
+        - Daily energy telemetry (today_battery_discharge, today_battery_charge)
+        - Additional sensors (SOC, voltage, current, temperature)
         
         Args:
             battery_array_id: Battery array ID
@@ -901,23 +1179,96 @@ class HADiscoveryPublisher:
             "manufacturer": "SolarHub",
         }
         
-        # Add via_device relationships if system is provided
+        # Add via_device relationship - prefer system
         if system_id:
             device_info["via_device"] = f"system:{system_id}"
         elif pack_ids:
             # Fallback to first pack if no system
             device_info["via_device"] = f"pack:{pack_ids[0]}"
         
-        # Battery array-level sensors
-        sensors = [
+        # Real-time battery power sensor (W)
+        power_sensors = [
+            ("battery_power", "Battery Power", "W", "power"),  # positive = discharge, negative = charge
+        ]
+        
+        for field_key, name, unit, device_class in power_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "measurement",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery array power sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery array power sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Cumulative energy sensors (kWh) - total_increasing state_class
+        cumulative_energy_sensors = [
+            ("total_battery_discharge", "Total Battery Discharge", "kWh", "energy"),
+            ("total_battery_charge", "Total Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in cumulative_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery array cumulative energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery array cumulative energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Daily energy sensors (kWh) - total_increasing state_class (resets daily)
+        daily_energy_sensors = [
+            ("today_battery_discharge", "Today Battery Discharge", "kWh", "energy"),
+            ("today_battery_charge", "Today Battery Charge", "kWh", "energy"),
+        ]
+        
+        for field_key, name, unit, device_class in daily_energy_sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "total_increasing",  # Resets daily
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery array daily energy sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery array daily energy sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Additional battery array sensors (already exist, keep them)
+        additional_sensors = [
             ("total_soc_pct", "Total SOC", "%", "battery"),
             ("total_voltage_v", "Total Voltage", "V", "voltage"),
             ("total_current_a", "Total Current", "A", "current"),
-            ("total_power_w", "Total Power", "W", "power"),
             ("avg_temperature_c", "Average Temperature", "°C", "temperature"),
         ]
         
-        for field_key, name, unit, device_class in sensors:
+        for field_key, name, unit, device_class in additional_sensors:
             object_id = f"{device_id}_{field_key}"
             cfg = {
                 "name": f"{device_name} {name}",
@@ -936,7 +1287,7 @@ class HADiscoveryPublisher:
             except Exception as e:
                 log.error(f"Failed to publish battery array sensor discovery to {disc_topic}: {e}", exc_info=True)
         
-        log.info(f"Published HA discovery for battery array {battery_array_id}")
+        log.info(f"Published HA discovery for battery array {battery_array_id} with {len(power_sensors) + len(cumulative_energy_sensors) + len(daily_energy_sensors) + len(additional_sensors)} sensors")
     
     def publish_home_entities(self, home_id: str = "home", home_name: Optional[str] = None, array_ids: Optional[List[str]] = None) -> None:
         """
