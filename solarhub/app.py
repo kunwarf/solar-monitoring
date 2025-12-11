@@ -85,12 +85,7 @@ class SolarApp:
         self.array_aggregator = ArrayAggregator()
     
     def _build_runtime_objects(self, cfg: HubConfig):
-        """Build runtime objects (arrays, packs, battery_bank_arrays) from configuration."""
-        from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
-        self.arrays = build_array_runtime_objects(cfg) if cfg.arrays else {}
-        self.packs = build_pack_runtime_objects(cfg) if cfg.battery_packs else {}
-        self.battery_bank_arrays = build_battery_bank_array_runtime_objects(cfg) if cfg.battery_bank_arrays else {}
-        
+        """Build runtime objects from hierarchy (database-first, config.yaml fallback)."""
         # Initialize configuration manager
         from solarhub.config_manager import ConfigurationManager
         self.config_manager = ConfigurationManager(config_path="config.yaml", db_logger=self.logger)
@@ -102,6 +97,144 @@ class SolarApp:
         # Initialize command queue manager
         telemetry_interval = getattr(cfg.polling, 'interval_secs', 10.0)
         self.command_queue = CommandQueueManager(telemetry_polling_interval=telemetry_interval)
+        
+        # Load hierarchy from database
+        try:
+            from solarhub.hierarchy.loader import HierarchyLoader
+            loader = HierarchyLoader(self.logger.path)
+            self.hierarchy_systems = loader.load_hierarchy()
+            log.info(f"Loaded {len(self.hierarchy_systems)} system(s) from database hierarchy")
+            
+            # Build runtime objects from hierarchy
+            self._build_runtime_from_hierarchy()
+            
+            # Also build legacy arrays/packs for backward compatibility
+            from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
+            self.arrays = build_array_runtime_objects(cfg) if cfg.arrays else {}
+            self.packs = build_pack_runtime_objects(cfg) if cfg.battery_packs else {}
+            self.battery_bank_arrays = build_battery_bank_array_runtime_objects(cfg) if cfg.battery_bank_arrays else {}
+            
+        except Exception as e:
+            log.error(f"Failed to load hierarchy from database: {e}", exc_info=True)
+            log.warning("Falling back to config.yaml-based runtime objects")
+            # Fallback to config-based approach
+            from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
+            self.arrays = build_array_runtime_objects(cfg) if cfg.arrays else {}
+            self.packs = build_pack_runtime_objects(cfg) if cfg.battery_packs else {}
+            self.battery_bank_arrays = build_battery_bank_array_runtime_objects(cfg) if cfg.battery_bank_arrays else {}
+            self.hierarchy_systems = {}
+    
+    def _build_runtime_from_hierarchy(self):
+        """Build runtime objects (inverters, battery packs, meters) from hierarchy."""
+        if not self.hierarchy_systems:
+            log.warning("No hierarchy systems loaded, skipping runtime object building")
+            return
+        
+        # Store hierarchy devices for use in init()
+        self._hierarchy_inverters: Dict[str, Any] = {}  # inverter_id -> Inverter hierarchy object
+        self._hierarchy_battery_packs: Dict[str, Any] = {}  # pack_id -> BatteryPack hierarchy object
+        self._hierarchy_meters: Dict[str, Any] = {}  # meter_id -> Meter hierarchy object
+        
+        # Collect all devices from all systems
+        for system_id, system in self.hierarchy_systems.items():
+            # Collect inverters
+            for inverter_array in system.inverter_arrays:
+                for inverter in inverter_array.inverters:
+                    self._hierarchy_inverters[inverter.inverter_id] = inverter
+                    log.debug(f"Registered hierarchy inverter: {inverter.inverter_id} (array: {inverter.array_id}, system: {system_id})")
+            
+            # Collect battery packs
+            for battery_array in system.battery_arrays:
+                for battery_pack in battery_array.battery_packs:
+                    self._hierarchy_battery_packs[battery_pack.pack_id] = battery_pack
+                    log.debug(f"Registered hierarchy battery pack: {battery_pack.pack_id} (array: {battery_array.battery_array_id}, system: {system_id})")
+            
+            # Collect meters
+            for meter in system.meters:
+                self._hierarchy_meters[meter.meter_id] = meter
+                log.debug(f"Registered hierarchy meter: {meter.meter_id} (system: {system_id})")
+        
+        log.info(f"Built runtime objects from hierarchy: {len(self._hierarchy_inverters)} inverters, "
+                f"{len(self._hierarchy_battery_packs)} battery packs, {len(self._hierarchy_meters)} meters")
+    
+    def _adapter_instance_to_inverter_config(self, inverter, adapter_instance) -> InverterConfig:
+        """Convert hierarchy Inverter + AdapterInstance to InverterConfig."""
+        from solarhub.config import InverterConfig, InverterAdapterConfig, SafetyLimits, SolarArrayParams
+        
+        # Convert adapter config_json to InverterAdapterConfig
+        adapter_config_dict = adapter_instance.config_json.copy()
+        adapter_config_dict['type'] = adapter_instance.adapter_type
+        adapter_config = InverterAdapterConfig(**adapter_config_dict)
+        
+        # Create InverterConfig
+        inv_config = InverterConfig(
+            id=inverter.inverter_id,
+            name=inverter.name,
+            array_id=inverter.array_id,
+            adapter=adapter_config,
+            safety=SafetyLimits(),  # Default safety limits
+            solar=[SolarArrayParams()],  # Default solar array params
+            phase_type=inverter.phase_type
+        )
+        return inv_config
+    
+    def _adapter_instances_to_battery_bank_config(self, battery_pack, adapter_instances) -> 'BatteryBankConfig':
+        """Convert hierarchy BatteryPack + AdapterInstances to BatteryBankConfig."""
+        from solarhub.config import BatteryBankConfig, BatteryAdapterConfig, BatteryAdapterConfigWithPriority
+        
+        if len(adapter_instances) == 1:
+            # Single adapter (backward compatibility)
+            adapter_instance = adapter_instances[0]
+            adapter_config_dict = adapter_instance.config_json.copy()
+            adapter_config_dict['type'] = adapter_instance.adapter_type
+            adapter_config = BatteryAdapterConfig(**adapter_config_dict)
+            
+            bank_config = BatteryBankConfig(
+                id=battery_pack.pack_id,
+                name=battery_pack.name,
+                adapter=adapter_config
+            )
+        else:
+            # Multiple adapters (failover)
+            adapters_with_priority = []
+            for adapter_instance in sorted(adapter_instances, key=lambda a: a.priority):
+                adapter_config_dict = adapter_instance.config_json.copy()
+                adapter_config_dict['type'] = adapter_instance.adapter_type
+                adapter_config = BatteryAdapterConfig(**adapter_config_dict)
+                
+                adapters_with_priority.append(
+                    BatteryAdapterConfigWithPriority(
+                        adapter=adapter_config,
+                        priority=adapter_instance.priority,
+                        enabled=adapter_instance.enabled
+                    )
+                )
+            
+            bank_config = BatteryBankConfig(
+                id=battery_pack.pack_id,
+                name=battery_pack.name,
+                adapters=adapters_with_priority
+            )
+        
+        return bank_config
+    
+    def _adapter_instance_to_meter_config(self, meter, adapter_instance) -> 'MeterConfig':
+        """Convert hierarchy Meter + AdapterInstance to MeterConfig."""
+        from solarhub.config import MeterConfig, MeterAdapterConfig
+        
+        # Convert adapter config_json to MeterAdapterConfig
+        adapter_config_dict = adapter_instance.config_json.copy()
+        adapter_config_dict['type'] = adapter_instance.adapter_type
+        adapter_config = MeterAdapterConfig(**adapter_config_dict)
+        
+        # Create MeterConfig
+        meter_config = MeterConfig(
+            id=meter.meter_id,
+            name=meter.name,
+            attachment_target=meter.attachment_target,
+            adapter=adapter_config
+        )
+        return meter_config
         
         # Track polling loop task for background execution
         self._polling_loop_task: Optional[asyncio.Task] = None
@@ -403,7 +536,24 @@ class SolarApp:
             except Exception as e:
                 log.error(f"Device discovery failed: {e}", exc_info=True)
         
-        for inv in self.cfg.inverters:
+        # Initialize inverters from hierarchy (if available) or config
+        inverters_to_init = []
+        if hasattr(self, '_hierarchy_inverters') and self._hierarchy_inverters:
+            log.info(f"Initializing {len(self._hierarchy_inverters)} inverters from hierarchy")
+            for inverter_id, inverter in self._hierarchy_inverters.items():
+                if not inverter.adapter:
+                    log.warning(f"Inverter {inverter_id} has no adapter configured, skipping")
+                    continue
+                try:
+                    inv_config = self._adapter_instance_to_inverter_config(inverter, inverter.adapter)
+                    inverters_to_init.append(inv_config)
+                except Exception as e:
+                    log.error(f"Failed to convert hierarchy inverter {inverter_id} to config: {e}", exc_info=True)
+        else:
+            log.info(f"Initializing {len(self.cfg.inverters)} inverters from config.yaml")
+            inverters_to_init = self.cfg.inverters
+        
+        for inv in inverters_to_init:
             # Skip meter adapters - they should be configured in the meters section
             if inv.adapter.type in METER_ADAPTERS:
                 log.warning(
@@ -491,10 +641,32 @@ class SolarApp:
                 except Exception as e:
                     log.error("Failed to initialize battery adapter: %s", e)
         
+        # Initialize battery banks from hierarchy (if available) or config
+        battery_banks_to_init = []
+        if hasattr(self, '_hierarchy_battery_packs') and self._hierarchy_battery_packs:
+            log.info(f"Initializing {len(self._hierarchy_battery_packs)} battery packs from hierarchy")
+            for pack_id, battery_pack in self._hierarchy_battery_packs.items():
+                if not battery_pack.adapters:
+                    log.warning(f"Battery pack {pack_id} has no adapters configured, skipping")
+                    continue
+                try:
+                    # Filter enabled adapters
+                    enabled_adapters = [a for a in battery_pack.adapters if a.enabled]
+                    if not enabled_adapters:
+                        log.warning(f"Battery pack {pack_id} has no enabled adapters, skipping")
+                        continue
+                    bank_config = self._adapter_instances_to_battery_bank_config(battery_pack, enabled_adapters)
+                    battery_banks_to_init.append(bank_config)
+                except Exception as e:
+                    log.error(f"Failed to convert hierarchy battery pack {pack_id} to config: {e}", exc_info=True)
+        elif getattr(self.cfg, "battery_banks", None):
+            log.info(f"Initializing {len(self.cfg.battery_banks)} battery banks from config.yaml")
+            battery_banks_to_init = self.cfg.battery_banks
+        
         # Initialize all battery banks from battery_banks list
-        if getattr(self.cfg, "battery_banks", None):
-            log.info(f"Found {len(self.cfg.battery_banks)} battery bank(s) in configuration")
-            for idx, bank in enumerate(self.cfg.battery_banks):
+        if battery_banks_to_init:
+            log.info(f"Found {len(battery_banks_to_init)} battery bank(s) in configuration")
+            for idx, bank in enumerate(battery_banks_to_init):
                 bank_id = getattr(bank, 'id', 'UNKNOWN')
                 # Determine adapter type for logging
                 adapter_type_str = 'NO_ADAPTER'
@@ -587,9 +759,26 @@ class SolarApp:
                 except Exception as e:
                     log.error(f"Failed to initialize battery adapter for {bank.id}: {e}", exc_info=True)
 
+        # Initialize meters from hierarchy (if available) or config
+        meters_to_init = []
+        if hasattr(self, '_hierarchy_meters') and self._hierarchy_meters:
+            log.info(f"Initializing {len(self._hierarchy_meters)} meters from hierarchy")
+            for meter_id, meter in self._hierarchy_meters.items():
+                if not meter.adapter:
+                    log.warning(f"Meter {meter_id} has no adapter configured, skipping")
+                    continue
+                try:
+                    meter_config = self._adapter_instance_to_meter_config(meter, meter.adapter)
+                    meters_to_init.append(meter_config)
+                except Exception as e:
+                    log.error(f"Failed to convert hierarchy meter {meter_id} to config: {e}", exc_info=True)
+        elif getattr(self.cfg, "meters", None):
+            log.info(f"Initializing {len(self.cfg.meters)} meters from config.yaml")
+            meters_to_init = self.cfg.meters
+        
         # Initialize meters if configured
-        if getattr(self.cfg, "meters", None):
-            for meter_cfg in self.cfg.meters:
+        if meters_to_init:
+            for meter_cfg in meters_to_init:
                 if meter_cfg.adapter.type not in METER_ADAPTERS:
                     log.warning(f"Unsupported meter adapter type: {meter_cfg.adapter.type}")
                     continue
