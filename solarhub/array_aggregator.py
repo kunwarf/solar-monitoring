@@ -29,7 +29,8 @@ class ArrayAggregator:
         array_id: str,
         inverter_telemetry: Dict[str, Telemetry],
         pack_telemetry: Optional[Dict[str, BatteryPackTelemetry]] = None,
-        pack_configs: Optional[Dict[str, Dict[str, Any]]] = None
+        pack_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        system_id: Optional[str] = None
     ) -> ArrayTelemetry:
         """
         Aggregate inverter telemetry into array-level data.
@@ -39,16 +40,20 @@ class ArrayAggregator:
             inverter_telemetry: Dict mapping inverter_id -> Telemetry
             pack_telemetry: Optional dict mapping pack_id -> BatteryPackTelemetry
             pack_configs: Optional dict mapping pack_id -> config (for nominal_kwh)
+            system_id: Optional system identifier for hierarchy awareness
             
         Returns:
             ArrayTelemetry with aggregated data
         """
         if not inverter_telemetry:
             log.warning(f"No inverter telemetry provided for array {array_id}")
+            metadata = {"inverter_count": 0}
+            if system_id:
+                metadata["system_id"] = system_id
             return ArrayTelemetry(
                 array_id=array_id,
                 ts=datetime.utcnow().isoformat(),
-                metadata={"inverter_count": 0}  # Will be serialized as _metadata in JSON
+                metadata=metadata  # Will be serialized as _metadata in JSON
             )
         
         # Get most recent timestamp
@@ -155,6 +160,8 @@ class ArrayAggregator:
             "inverter_count": len(inverter_telemetry),
             "attached_pack_ids": list(pack_telemetry.keys()) if pack_telemetry else [],
         }
+        if system_id:
+            metadata["system_id"] = system_id
         
         # Add phase mix and vendor mix if available
         phase_types = []

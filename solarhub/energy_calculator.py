@@ -632,3 +632,314 @@ class EnergyCalculator:
         array_summary['sample_count'] = total_samples
         
         return array_summary
+    
+    def get_array_hourly_energy_from_table(self, array_id: str, system_id: str, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """
+        Get hourly energy data for an array from array_hourly_energy table.
+        
+        Args:
+            array_id: The array ID
+            system_id: The system ID
+            start_time: Start time for query
+            end_time: End time for query
+            
+        Returns:
+            List of hourly energy data dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Convert times to configured timezone
+            start_time_configured = to_configured(start_time)
+            end_time_configured = to_configured(end_time)
+            start_date_str = start_time_configured.strftime('%Y-%m-%d')
+            end_date_str = end_time_configured.strftime('%Y-%m-%d')
+            
+            query = """
+                SELECT 
+                    date,
+                    hour_start,
+                    solar_energy_kwh,
+                    load_energy_kwh,
+                    battery_charge_energy_kwh,
+                    battery_discharge_energy_kwh,
+                    grid_import_energy_kwh,
+                    grid_export_energy_kwh,
+                    avg_solar_power_w,
+                    avg_load_power_w,
+                    avg_battery_power_w,
+                    avg_grid_power_w,
+                    avg_soc_pct,
+                    sample_count
+                FROM array_hourly_energy 
+                WHERE array_id = ? 
+                AND system_id = ?
+                AND date >= ? 
+                AND date <= ?
+                ORDER BY date, hour_start
+            """
+            
+            cursor.execute(query, (array_id, system_id, start_date_str, end_date_str))
+            rows = cursor.fetchall()
+            
+            data = []
+            for row in rows:
+                date, hour_start, solar_kwh, load_kwh, batt_charge_kwh, batt_discharge_kwh, grid_import_kwh, grid_export_kwh, avg_solar_w, avg_load_w, avg_batt_w, avg_grid_w, avg_soc, sample_count = row
+                
+                hour = f"{hour_start:02d}:00"
+                date_hour = f"{date} {hour}"
+                
+                data.append({
+                    'time': hour,
+                    'date_hour': date_hour,
+                    'date': date,
+                    'hour': hour_start,
+                    'solar': round(solar_kwh or 0, 3),
+                    'load': round(load_kwh or 0, 3),
+                    'battery_charge': round(batt_charge_kwh or 0, 3),
+                    'battery_discharge': round(batt_discharge_kwh or 0, 3),
+                    'grid_import': round(grid_import_kwh or 0, 3),
+                    'grid_export': round(grid_export_kwh or 0, 3),
+                    'avg_solar_power_w': round(avg_solar_w or 0),
+                    'avg_load_power_w': round(avg_load_w or 0),
+                    'avg_battery_power_w': round(avg_batt_w or 0),
+                    'avg_grid_power_w': round(avg_grid_w or 0),
+                    'avg_soc_pct': round(avg_soc or 0, 2) if avg_soc else None,
+                    'sample_count': sample_count or 0
+                })
+            
+            return data
+            
+        except Exception as e:
+            log.error(f"Failed to get array hourly energy from table: {e}", exc_info=True)
+            return []
+        finally:
+            conn.close()
+    
+    def get_system_hourly_energy_from_table(self, system_id: str, start_time: datetime, end_time: datetime) -> List[Dict]:
+        """
+        Get hourly energy data for a system from system_hourly_energy table.
+        
+        Args:
+            system_id: The system ID
+            start_time: Start time for query
+            end_time: End time for query
+            
+        Returns:
+            List of hourly energy data dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Convert times to configured timezone
+            start_time_configured = to_configured(start_time)
+            end_time_configured = to_configured(end_time)
+            start_date_str = start_time_configured.strftime('%Y-%m-%d')
+            end_date_str = end_time_configured.strftime('%Y-%m-%d')
+            
+            query = """
+                SELECT 
+                    date,
+                    hour_start,
+                    solar_energy_kwh,
+                    load_energy_kwh,
+                    battery_charge_energy_kwh,
+                    battery_discharge_energy_kwh,
+                    grid_import_energy_kwh,
+                    grid_export_energy_kwh,
+                    avg_solar_power_w,
+                    avg_load_power_w,
+                    avg_battery_power_w,
+                    avg_grid_power_w,
+                    avg_soc_pct,
+                    sample_count
+                FROM system_hourly_energy 
+                WHERE system_id = ? 
+                AND date >= ? 
+                AND date <= ?
+                ORDER BY date, hour_start
+            """
+            
+            cursor.execute(query, (system_id, start_date_str, end_date_str))
+            rows = cursor.fetchall()
+            
+            data = []
+            for row in rows:
+                date, hour_start, solar_kwh, load_kwh, batt_charge_kwh, batt_discharge_kwh, grid_import_kwh, grid_export_kwh, avg_solar_w, avg_load_w, avg_batt_w, avg_grid_w, avg_soc, sample_count = row
+                
+                hour = f"{hour_start:02d}:00"
+                date_hour = f"{date} {hour}"
+                
+                data.append({
+                    'time': hour,
+                    'date_hour': date_hour,
+                    'date': date,
+                    'hour': hour_start,
+                    'solar': round(solar_kwh or 0, 3),
+                    'load': round(load_kwh or 0, 3),
+                    'battery_charge': round(batt_charge_kwh or 0, 3),
+                    'battery_discharge': round(batt_discharge_kwh or 0, 3),
+                    'grid_import': round(grid_import_kwh or 0, 3),
+                    'grid_export': round(grid_export_kwh or 0, 3),
+                    'avg_solar_power_w': round(avg_solar_w or 0),
+                    'avg_load_power_w': round(avg_load_w or 0),
+                    'avg_battery_power_w': round(avg_batt_w or 0),
+                    'avg_grid_power_w': round(avg_grid_w or 0),
+                    'avg_soc_pct': round(avg_soc or 0, 2) if avg_soc else None,
+                    'sample_count': sample_count or 0
+                })
+            
+            return data
+            
+        except Exception as e:
+            log.error(f"Failed to get system hourly energy from table: {e}", exc_info=True)
+            return []
+        finally:
+            conn.close()
+    
+    def calculate_and_store_array_hourly_energy(self, array_id: str, system_id: str, inverter_ids: List[str], hour_start: datetime):
+        """
+        Calculate and store hourly energy for an array by aggregating from inverters.
+        
+        Args:
+            array_id: The array ID
+            system_id: The system ID
+            inverter_ids: List of inverter IDs in this array
+            hour_start: Start of the hour to calculate
+        """
+        hour_end = hour_start + timedelta(hours=1)
+        
+        # Calculate energy for this hour by aggregating from inverters
+        array_energy = self.calculate_array_hourly_energy(array_id, inverter_ids, hour_start, hour_end)
+        
+        # Store in array_hourly_energy table
+        hour_start_configured = to_configured(hour_start)
+        date = hour_start_configured.strftime('%Y-%m-%d')
+        hour = hour_start_configured.hour
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO array_hourly_energy 
+                (array_id, system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
+                 battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                 grid_import_energy_kwh, grid_export_energy_kwh,
+                 avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                 sample_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                array_id,
+                system_id,
+                date,
+                hour,
+                array_energy['solar_energy_kwh'],
+                array_energy['load_energy_kwh'],
+                array_energy['battery_charge_energy_kwh'],
+                array_energy['battery_discharge_energy_kwh'],
+                array_energy['grid_import_energy_kwh'],
+                array_energy['grid_export_energy_kwh'],
+                array_energy['avg_solar_power_w'],
+                array_energy['avg_load_power_w'],
+                array_energy['avg_battery_power_w'],
+                array_energy['avg_grid_power_w'],
+                array_energy['sample_count']
+            ))
+            
+            conn.commit()
+            log.debug(f"Stored array hourly energy data for {array_id} at {hour_start}")
+            
+        except Exception as e:
+            log.error(f"Failed to store array hourly energy data: {e}", exc_info=True)
+            raise
+        finally:
+            conn.close()
+    
+    def calculate_and_store_system_hourly_energy(self, system_id: str, array_ids: List[str], hour_start: datetime):
+        """
+        Calculate and store hourly energy for a system by aggregating from arrays.
+        
+        Args:
+            system_id: The system ID
+            array_ids: List of array IDs in this system
+            hour_start: Start of the hour to calculate
+        """
+        hour_end = hour_start + timedelta(hours=1)
+        hour_start_configured = to_configured(hour_start)
+        date = hour_start_configured.strftime('%Y-%m-%d')
+        hour = hour_start_configured.hour
+        
+        # Aggregate from array_hourly_energy table
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Get array hourly energy for this hour
+            placeholders = ','.join(['?'] * len(array_ids))
+            query = f"""
+                SELECT 
+                    SUM(solar_energy_kwh) as solar_energy_kwh,
+                    SUM(load_energy_kwh) as load_energy_kwh,
+                    SUM(battery_charge_energy_kwh) as battery_charge_energy_kwh,
+                    SUM(battery_discharge_energy_kwh) as battery_discharge_energy_kwh,
+                    SUM(grid_import_energy_kwh) as grid_import_energy_kwh,
+                    SUM(grid_export_energy_kwh) as grid_export_energy_kwh,
+                    SUM(avg_solar_power_w) as avg_solar_power_w,
+                    SUM(avg_load_power_w) as avg_load_power_w,
+                    SUM(avg_battery_power_w) as avg_battery_power_w,
+                    SUM(avg_grid_power_w) as avg_grid_power_w,
+                    AVG(avg_soc_pct) as avg_soc_pct,
+                    SUM(sample_count) as sample_count
+                FROM array_hourly_energy 
+                WHERE system_id = ? 
+                AND array_id IN ({placeholders})
+                AND date = ?
+                AND hour_start = ?
+            """
+            
+            cursor.execute(query, [system_id] + array_ids + [date, hour])
+            row = cursor.fetchone()
+            
+            if row:
+                solar_kwh, load_kwh, batt_charge_kwh, batt_discharge_kwh, grid_import_kwh, grid_export_kwh, avg_solar_w, avg_load_w, avg_batt_w, avg_grid_w, avg_soc, sample_count = row
+                
+                # Store in system_hourly_energy table
+                cursor.execute("""
+                    INSERT OR REPLACE INTO system_hourly_energy 
+                    (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
+                     battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                     grid_import_energy_kwh, grid_export_energy_kwh,
+                     avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                     avg_soc_pct, sample_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    system_id,
+                    date,
+                    hour,
+                    solar_kwh or 0.0,
+                    load_kwh or 0.0,
+                    batt_charge_kwh or 0.0,
+                    batt_discharge_kwh or 0.0,
+                    grid_import_kwh or 0.0,
+                    grid_export_kwh or 0.0,
+                    avg_solar_w or 0.0,
+                    avg_load_w or 0.0,
+                    avg_batt_w or 0.0,
+                    avg_grid_w or 0.0,
+                    avg_soc,
+                    sample_count or 0
+                ))
+                
+                conn.commit()
+                log.debug(f"Stored system hourly energy data for {system_id} at {hour_start}")
+            else:
+                log.warning(f"No array hourly energy data found for system {system_id} at {hour_start}")
+                
+        except Exception as e:
+            log.error(f"Failed to store system hourly energy data: {e}", exc_info=True)
+            raise
+        finally:
+            conn.close()
