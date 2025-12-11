@@ -9,7 +9,7 @@ import { useDataContext } from './DataProvider';
 // Battery Array > Battery Banks
 
 export interface BatteryBank {
-  id: string;
+  id: string; // Actual battery bank ID from config (e.g., "jkbms_bank_ble", "battery1")
   name: string;
   model: string;
   serialNumber: string;
@@ -20,6 +20,10 @@ export interface BatteryBank {
     voltage: number;
     temperature: number;
   };
+  // Context fields for API calls
+  batteryBankId?: string; // Actual bank ID from config (same as id, kept for clarity)
+  packIndex?: number; // Which battery unit/pack within the bank (0-based)
+  batteryArrayId?: string; // Parent battery array ID
 }
 
 export interface BatteryArray {
@@ -49,6 +53,7 @@ export interface InverterArray {
   id: string;
   name: string;
   inverters: Inverter[];
+  batteryArrayId?: string | null; // Preserved for mapping to systems
   // Note: Battery Arrays are now siblings under System, not nested here
 }
 
@@ -416,6 +421,11 @@ export const energyStats = {
   dailyConsumption: 38.2,
   selfConsumption: 89,
   gridExported: 4.4,
+  batteryChargeEnergy: 12.5,
+  batteryDischargeEnergy: 8.3,
+  loadEnergy: 38.2,
+  gridImportEnergy: 2.1,
+  gridExportEnergy: 4.4,
   co2Saved: 18.7,
   moneySaved: 12.45,
   monthlyBillAmount: 48.20,

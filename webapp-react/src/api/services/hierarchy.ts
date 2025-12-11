@@ -76,6 +76,45 @@ export const hierarchyService = {
   async getHomeHierarchy(): Promise<HomeHierarchy> {
     const config = await this.getConfig()
     
+    // Get device name maps from config response
+    const response = await api.get<BackendConfigResponse>(
+      '/api/config',
+      { ttl: CACHE_TTL.CONFIG, key: 'hierarchy:config:full' }
+    )
+    
+    const inverterNameMap = new Map<string, string>()
+    const batteryNameMap = new Map<string, string>()
+    const meterNameMap = new Map<string, string>()
+    
+    if (response.config) {
+      // Map inverter IDs to names
+      if (response.config.inverters) {
+        response.config.inverters.forEach((inv) => {
+          if (inv.name) {
+            inverterNameMap.set(inv.id, inv.name)
+          }
+        })
+      }
+      
+      // Map battery bank IDs to names
+      if (response.config.battery_banks) {
+        response.config.battery_banks.forEach((bank) => {
+          if (bank.name) {
+            batteryNameMap.set(bank.id, bank.name)
+          }
+        })
+      }
+      
+      // Map meter IDs to names
+      if (response.config.meters) {
+        response.config.meters.forEach((meter) => {
+          if (meter.name) {
+            meterNameMap.set(meter.id, meter.name)
+          }
+        })
+      }
+    }
+    
     // Build battery arrays with attachments
     const batteryArrays: BatteryArray[] = config.batteryBankArrays.map((bat) => {
       const attachment = config.batteryBankArrayAttachments.find(
@@ -107,6 +146,12 @@ export const hierarchyService = {
       name: config.home.name,
       inverterArrays,
       batteryArrays,
+      // Include name maps for use in DataProvider
+      _deviceNames: {
+        inverters: inverterNameMap,
+        batteries: batteryNameMap,
+        meters: meterNameMap,
+      } as any,
     }
   },
 }

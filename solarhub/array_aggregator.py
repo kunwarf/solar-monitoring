@@ -238,7 +238,9 @@ class ArrayAggregator:
         self,
         array_telemetry: Dict[str, ArrayTelemetry],
         meter_telemetry: Optional[Dict[str, Any]] = None,
-        battery_bank_telemetry: Optional[Dict[str, Any]] = None
+        battery_bank_telemetry: Optional[Dict[str, Any]] = None,
+        meter_configs: Optional[Dict[str, Any]] = None,
+        meter_energy_data: Optional[Dict[str, Dict[str, float]]] = None
     ) -> HomeTelemetry:
         """
         Aggregate array telemetry into home-level data.
@@ -367,38 +369,113 @@ class ArrayAggregator:
             array_breakdown.append(array_data)
         
         # Home-level meters (attached to "home")
+        # Include meters from config even if telemetry is missing (for UI display)
         meter_breakdown = []
+        processed_meter_ids = set()
+        
+        # First, process meters with telemetry data
         if meter_telemetry:
             for meter_id, meter_tel in meter_telemetry.items():
+                processed_meter_ids.add(meter_id)
+                
                 # Handle both MeterTelemetry objects and dicts
                 if hasattr(meter_tel, 'grid_power_w'):
                     # It's a MeterTelemetry object
+                    # Get import/export from telemetry if available (grid_import_wh, grid_export_wh in Wh, convert to kWh)
+                    import_kwh = (meter_tel.grid_import_wh / 1000.0) if hasattr(meter_tel, 'grid_import_wh') and meter_tel.grid_import_wh else None
+                    export_kwh = (meter_tel.grid_export_wh / 1000.0) if hasattr(meter_tel, 'grid_export_wh') and meter_tel.grid_export_wh else None
+                    
+                    # Fallback to energy_data if available
+                    if meter_energy_data and meter_id in meter_energy_data:
+                        if import_kwh is None:
+                            import_kwh = meter_energy_data[meter_id].get("import_kwh", 0.0)
+                        if export_kwh is None:
+                            export_kwh = meter_energy_data[meter_id].get("export_kwh", 0.0)
+                    
                     meter_data = {
                         "meter_id": meter_id,
                         "power_w": meter_tel.grid_power_w,
                         "voltage_v": meter_tel.grid_voltage_v,
                         "current_a": meter_tel.grid_current_a,
                         "frequency_hz": meter_tel.grid_frequency_hz,
+                        "import_kwh": import_kwh if import_kwh is not None else 0.0,
+                        "export_kwh": export_kwh if export_kwh is not None else 0.0,
                     }
                 elif isinstance(meter_tel, dict):
                     # It's already a dict
+                    # Get import/export from dict or energy_data
+                    import_kwh = None
+                    export_kwh = None
+                    if meter_tel.get('grid_import_wh') is not None:
+                        import_kwh = meter_tel.get('grid_import_wh') / 1000.0
+                    if meter_tel.get('grid_export_wh') is not None:
+                        export_kwh = meter_tel.get('grid_export_wh') / 1000.0
+                    
+                    # Fallback to energy_data if available
+                    if meter_energy_data and meter_id in meter_energy_data:
+                        if import_kwh is None:
+                            import_kwh = meter_energy_data[meter_id].get("import_kwh", 0.0)
+                        if export_kwh is None:
+                            export_kwh = meter_energy_data[meter_id].get("export_kwh", 0.0)
+                    
                     meter_data = {
                         "meter_id": meter_id,
                         "power_w": meter_tel.get('grid_power_w') or meter_tel.get('power_w'),
                         "voltage_v": meter_tel.get('grid_voltage_v') or meter_tel.get('voltage_v'),
                         "current_a": meter_tel.get('grid_current_a') or meter_tel.get('current_a'),
                         "frequency_hz": meter_tel.get('grid_frequency_hz') or meter_tel.get('frequency_hz'),
+                        "import_kwh": import_kwh if import_kwh is not None else 0.0,
+                        "export_kwh": export_kwh if export_kwh is not None else 0.0,
                     }
                 else:
                     # Fallback to getattr
+                    import_kwh = None
+                    export_kwh = None
+                    if hasattr(meter_tel, 'grid_import_wh') and meter_tel.grid_import_wh:
+                        import_kwh = meter_tel.grid_import_wh / 1000.0
+                    if hasattr(meter_tel, 'grid_export_wh') and meter_tel.grid_export_wh:
+                        export_kwh = meter_tel.grid_export_wh / 1000.0
+                    
+                    # Fallback to energy_data if available
+                    if meter_energy_data and meter_id in meter_energy_data:
+                        if import_kwh is None:
+                            import_kwh = meter_energy_data[meter_id].get("import_kwh", 0.0)
+                        if export_kwh is None:
+                            export_kwh = meter_energy_data[meter_id].get("export_kwh", 0.0)
+                    
                     meter_data = {
                         "meter_id": meter_id,
                         "power_w": getattr(meter_tel, 'grid_power_w', None) or getattr(meter_tel, 'power_w', None),
                         "voltage_v": getattr(meter_tel, 'grid_voltage_v', None) or getattr(meter_tel, 'voltage_v', None),
                         "current_a": getattr(meter_tel, 'grid_current_a', None) or getattr(meter_tel, 'current_a', None),
                         "frequency_hz": getattr(meter_tel, 'grid_frequency_hz', None) or getattr(meter_tel, 'frequency_hz', None),
+                        "import_kwh": import_kwh if import_kwh is not None else 0.0,
+                        "export_kwh": export_kwh if export_kwh is not None else 0.0,
                     }
                 meter_breakdown.append(meter_data)
+        
+        # Second, add meters from config that don't have telemetry yet (for UI display)
+        if meter_configs:
+            for meter_id, meter_cfg in meter_configs.items():
+                if meter_id not in processed_meter_ids:
+                    # Get energy data if available
+                    import_kwh = 0.0
+                    export_kwh = 0.0
+                    if meter_energy_data and meter_id in meter_energy_data:
+                        import_kwh = meter_energy_data[meter_id].get("import_kwh", 0.0)
+                        export_kwh = meter_energy_data[meter_id].get("export_kwh", 0.0)
+                    
+                    # Create placeholder meter entry
+                    meter_data = {
+                        "meter_id": meter_id,
+                        "power_w": 0,  # Placeholder until telemetry is available
+                        "voltage_v": None,
+                        "current_a": None,
+                        "frequency_hz": None,
+                        "import_kwh": import_kwh,
+                        "export_kwh": export_kwh,
+                    }
+                    meter_breakdown.append(meter_data)
         
         # Metadata
         metadata = {

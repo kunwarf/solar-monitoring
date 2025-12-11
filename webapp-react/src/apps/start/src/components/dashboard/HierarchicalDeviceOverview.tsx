@@ -185,19 +185,21 @@ function SystemCard({ system, index }: { system: System; index: number }) {
 
             {/* Battery Arrays */}
             {system.batteryArrays.map((batteryArray) => (
-              <div key={batteryArray.id} className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <div key={batteryArray.id} className="space-y-2 mb-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
                   {batteryArray.name}
                 </p>
-                {batteryArray.batteries.length > 0 ? (
-                  batteryArray.batteries.map((bat) => (
-                    <BatteryCard key={bat.id} battery={bat} />
-                  ))
-                ) : (
-                  <div className="p-3 rounded-lg bg-secondary/30">
-                    <p className="text-xs text-muted-foreground">No battery data available</p>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  {batteryArray.batteries.length > 0 ? (
+                    batteryArray.batteries.map((bat) => (
+                      <BatteryCard key={bat.id} battery={bat} />
+                    ))
+                  ) : (
+                    <div className="p-3 rounded-lg border border-border/50 bg-secondary/30">
+                      <p className="text-xs text-muted-foreground">No battery data available</p>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -311,7 +313,7 @@ function InverterArrayCard({ array, index }: { array: InverterArray; index: numb
 function InverterCard({ inverter }: { inverter: Inverter }) {
   return (
     <Link to={`/start/telemetry?device=${inverter.id}`}>
-      <div className="p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+      <div className="p-3 rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/50 transition-colors mb-2">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
             <Cpu className="w-4 h-4 text-muted-foreground" />
@@ -325,7 +327,7 @@ function InverterCard({ inverter }: { inverter: Inverter }) {
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-2">
           <MetricPill icon={Sun} label="Solar" value={inverter.metrics.solarPower.toFixed(1)} unit="kW" color="text-warning" />
           <MetricPill icon={Zap} label="Grid" value={inverter.metrics.gridPower.toFixed(1)} unit="kW" color="text-primary" />
           <MetricPill icon={Home} label="Load" value={inverter.metrics.loadPower.toFixed(1)} unit="kW" color="text-success" />
@@ -341,7 +343,7 @@ function BatteryCard({ battery }: { battery: BatteryBank }) {
   const isCharging = battery.metrics.power >= 0;
   return (
     <Link to={`/start/telemetry?device=${battery.id}`}>
-      <div className="p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+      <div className="p-3 rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/50 transition-colors mb-2">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
             <DynamicBatteryIcon className="w-4 h-4 text-muted-foreground" soc={battery.metrics.soc} isCharging={isCharging} />
@@ -355,9 +357,9 @@ function BatteryCard({ battery }: { battery: BatteryBank }) {
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-2">
           <MetricPill 
-            icon={() => <DynamicBatteryIcon className="w-3 h-3" soc={battery.metrics.soc} />} 
+            icon={() => <DynamicBatteryIcon className="w-4 h-4" soc={battery.metrics.soc} />} 
             label="SOC" 
             value={battery.metrics.soc.toString()} 
             unit="%" 
@@ -370,8 +372,8 @@ function BatteryCard({ battery }: { battery: BatteryBank }) {
             unit="kW" 
             color={isCharging ? "text-success" : "text-warning"} 
           />
-          <MetricPill icon={Gauge} label="Volt" value={battery.metrics.voltage.toFixed(1)} unit="V" color="text-muted-foreground" />
-          <MetricPill icon={Gauge} label="Temp" value={battery.metrics.temperature.toString()} unit="°C" color="text-muted-foreground" />
+          <MetricPill icon={Gauge} label="Volt" value={battery.metrics.voltage > 0 ? battery.metrics.voltage.toFixed(1) : "N/A"} unit="V" color="text-muted-foreground" />
+          <MetricPill icon={Gauge} label="Temp" value={battery.metrics.temperature > 0 ? battery.metrics.temperature.toString() : "N/A"} unit="°C" color="text-muted-foreground" />
         </div>
       </div>
     </Link>
@@ -462,16 +464,16 @@ function MetricPill({
   color: string;
 }) {
   return (
-    <div className="flex items-center gap-1.5 p-1.5 rounded bg-background/30">
+    <div className="flex items-center gap-1.5 p-2 rounded bg-background/30">
       {typeof Icon === 'function' && Icon.length === 0 ? (
         <Icon />
       ) : (
-        <Icon className={cn("w-3 h-3", color)} />
+        <Icon className={cn("w-4 h-4", color)} />
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-[9px] text-muted-foreground truncate">{label}</p>
-        <p className={cn("font-mono text-xs font-medium truncate", color)}>
-          {value}<span className="text-[9px] ml-0.5">{unit}</span>
+        <p className="text-[10px] text-muted-foreground truncate">{label}</p>
+        <p className={cn("font-mono text-sm font-medium truncate", color)}>
+          {value}<span className="text-[10px] ml-0.5">{unit}</span>
         </p>
       </div>
     </div>

@@ -12,11 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Filter } from "lucide-react";
-import { devices } from "@/data/mockData";
+import { useDevicesData } from "@/data/mockDataHooks";
 import { useNavigate } from "react-router-dom";
 
 const DevicesPage = () => {
   const navigate = useNavigate();
+  const devices = useDevicesData();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");

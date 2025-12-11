@@ -926,12 +926,22 @@ def create_api(solar_app) -> FastAPI:
                         )
                         array_telemetry[array_cfg.id] = array_tel
             
-            # Get home-attached meters (attachment_target == "home")
+            # Get home-attached meters (attachment_target == "home" OR array_id == "home")
+            # Support both field names for backward compatibility
             meter_telemetry = {}
+            meter_configs = {}  # Store configs for meters even if telemetry is missing
             if solar_app.cfg.meters:
                 for meter_cfg in solar_app.cfg.meters:
-                    if getattr(meter_cfg, 'attachment_target', None) == "home":
+                    attachment_target = getattr(meter_cfg, 'attachment_target', None)
+                    array_id = getattr(meter_cfg, 'array_id', None)
+                    # Check both attachment_target and array_id for "home"
+                    is_home_meter = (attachment_target == "home") or (array_id == "home")
+                    
+                    if is_home_meter:
                         meter_id = meter_cfg.id
+                        # Store config even if telemetry is missing (for fallback display)
+                        meter_configs[meter_id] = meter_cfg
+                        
                         if hasattr(solar_app, 'meter_last') and solar_app.meter_last:
                             meter_tel = solar_app.meter_last.get(meter_id)
                             if meter_tel:
@@ -949,7 +959,8 @@ def create_api(solar_app) -> FastAPI:
             # Aggregate home telemetry
             aggregator = ArrayAggregator()
             home_tel = aggregator.aggregate_home_telemetry(
-                array_telemetry, meter_telemetry, battery_bank_telemetry
+                array_telemetry, meter_telemetry, battery_bank_telemetry, 
+                meter_configs=meter_configs, meter_energy_data=meter_energy_data
             )
             
             # Calculate date range based on period

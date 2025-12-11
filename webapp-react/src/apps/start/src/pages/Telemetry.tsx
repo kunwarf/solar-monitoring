@@ -22,19 +22,20 @@ import {
   Battery,
   Gauge,
 } from "lucide-react";
-import { devices } from "@/data/mockData";
+import { useDevicesData } from "@/data/mockDataHooks";
 import { cn } from "@/lib/utils";
 
 const TelemetryPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const deviceParam = searchParams.get("device");
+  const devices = useDevicesData();
   
   const [selectedDevice, setSelectedDevice] = useState(() => {
     // Check if device param exists and is valid
     if (deviceParam && devices.find(d => d.id === deviceParam)) {
       return deviceParam;
     }
-    return devices[0].id;
+    return devices.length > 0 ? devices[0].id : "";
   });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,8 +43,10 @@ const TelemetryPage = () => {
   useEffect(() => {
     if (deviceParam && devices.find(d => d.id === deviceParam)) {
       setSelectedDevice(deviceParam);
+    } else if (devices.length > 0 && !selectedDevice) {
+      setSelectedDevice(devices[0].id);
     }
-  }, [deviceParam]);
+  }, [deviceParam, devices]);
 
   // Update URL when device selection changes
   const handleDeviceChange = (deviceId: string) => {
@@ -53,6 +56,7 @@ const TelemetryPage = () => {
 
   const handleRefresh = () => {
     setRefreshing(true);
+    // Trigger refetch of telemetry data
     setTimeout(() => setRefreshing(false), 1000);
   };
 

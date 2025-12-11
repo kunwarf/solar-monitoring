@@ -144,8 +144,16 @@ class MeterConfig(BaseModel):
     """Configuration for an energy meter"""
     id: str
     name: Optional[str] = None
-    array_id: Optional[str] = None  # Array this meter is associated with (or "home" for home-level meter)
+    array_id: Optional[str] = None  # Array this meter is associated with (or "home" for home-level meter) - DEPRECATED, use attachment_target
+    attachment_target: Optional[str] = None  # "home" or array_id - where this meter is attached
     adapter: MeterAdapterConfig
+    
+    @model_validator(mode='after')
+    def set_attachment_target(self):
+        """Set attachment_target from array_id if not provided (backward compatibility)"""
+        if self.attachment_target is None and self.array_id is not None:
+            self.attachment_target = self.array_id
+        return self
 
 class SolarArrayParams(BaseModel):
     pv_dc_kw: float = 10.0

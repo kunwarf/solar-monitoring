@@ -78,14 +78,29 @@ export const telemetryService = {
       { ttl: CACHE_TTL.TELEMETRY, key: `telemetry:battery:${bankId || 'all'}` }
     )
     
+    // Preserve configured_banks for name lookup - add to each battery's raw data
+    const configuredBanks = response.configured_banks || []
+    
     // Handle multiple banks
     if (response.banks && response.banks.length > 0) {
-      return response.banks.map(normalizeBatteryData)
+      return response.banks.map(bat => {
+        const normalized = normalizeBatteryData(bat)
+        // Add configured_banks to raw data for name lookup
+        if (normalized.raw) {
+          ;(normalized.raw as any).configured_banks = configuredBanks
+        }
+        return normalized
+      })
     }
     
     // Handle single battery (backward compatibility)
     if (response.battery) {
-      return normalizeBatteryData(response.battery)
+      const normalized = normalizeBatteryData(response.battery)
+      // Add configured_banks to raw data
+      if (normalized.raw) {
+        ;(normalized.raw as any).configured_banks = configuredBanks
+      }
+      return normalized
     }
     
     throw new Error('No battery data available')

@@ -105,6 +105,21 @@ const reversePath = (path: string): string => {
   return path;
 };
 
+// Helper to format power - show in watts if less than 1 kW
+const formatPower = (power: number): { value: string; unit: string } => {
+  const absPower = Math.abs(power);
+  if (absPower < 1.0) {
+    return {
+      value: (absPower * 1000).toFixed(0),
+      unit: "W"
+    };
+  }
+  return {
+    value: absPower.toFixed(1),
+    unit: "kW"
+  };
+};
+
 // Dynamic Battery Node with fill level
 const BatteryNode = ({
   level,
@@ -154,6 +169,17 @@ const BatteryNode = ({
         strokeOpacity="0.6"
       />
       
+      {/* SOC at top */}
+      <text
+        x={x}
+        y={y - size / 2 - 12}
+        textAnchor="middle"
+        className="font-mono text-lg font-bold"
+        fill={getFillColor()}
+      >
+        {level}%
+      </text>
+      
       {/* Battery icon with fill */}
       <g transform={`translate(${x - 14}, ${y - 20})`}>
         {/* Battery terminal */}
@@ -195,16 +221,21 @@ const BatteryNode = ({
         Battery
       </text>
       
-      {/* Value - larger font */}
-      <text
-        x={x}
-        y={y + size / 2 + 48}
-        textAnchor="middle"
-        className="font-mono text-xl font-bold"
-        fill={getFillColor()}
-      >
-        {level}%
-      </text>
+      {/* Battery Power - larger font */}
+      {(() => {
+        const powerFormat = formatPower(power);
+        return (
+          <text
+            x={x}
+            y={y + size / 2 + 48}
+            textAnchor="middle"
+            className="font-mono text-xl font-bold"
+            fill={isDischarging ? "#EF4444" : getFillColor()}
+          >
+            {powerFormat.value} {powerFormat.unit}
+          </text>
+        );
+      })()}
     </motion.g>
   );
 };
@@ -277,15 +308,21 @@ const EnergyNode = ({
       </text>
       
       {/* Value - larger font for readability */}
-      <text
-        x={x}
-        y={labelPosition === "above" ? y - size / 2 - 12 : y + size / 2 + 48}
-        textAnchor="middle"
-        className="font-mono text-xl font-bold"
-        fill={color}
-      >
-        {value} {unit}
-      </text>
+      {(() => {
+        const numValue = parseFloat(value);
+        const powerFormat = formatPower(numValue);
+        return (
+          <text
+            x={x}
+            y={labelPosition === "above" ? y - size / 2 - 12 : y + size / 2 + 48}
+            textAnchor="middle"
+            className="font-mono text-xl font-bold"
+            fill={color}
+          >
+            {powerFormat.value} {powerFormat.unit}
+          </text>
+        );
+      })()}
     </motion.g>
   );
 };
@@ -312,10 +349,14 @@ export function EnergyFlowDiagram({
     grid: { x: 480, y: 450 },
   };
 
+  // Determine if battery is discharging
+  const isBatteryDischarging = batteryPower < 0;
+  
   // Curved paths - adjusted for new positions
   const paths = {
     solarToCenter: `M ${positions.solar.x} ${positions.solar.y + 40} Q ${cx} ${cy - 60} ${cx} ${cy - 28}`,
     centerToBattery: `M ${cx - 28} ${cy + 18} Q ${cx - 100} ${cy + 120} ${positions.battery.x + 40} ${positions.battery.y - 50}`,
+    batteryToCenter: `M ${positions.battery.x + 40} ${positions.battery.y - 50} Q ${cx - 100} ${cy + 120} ${cx - 28} ${cy + 18}`, // Reverse path for discharging
     centerToHome: `M ${cx} ${cy + 28} Q ${cx} ${cy + 120} ${positions.home.x} ${positions.home.y - 50}`,
     centerToGrid: `M ${cx + 28} ${cy + 18} Q ${cx + 100} ${cy + 120} ${positions.grid.x - 40} ${positions.grid.y - 50}`,
   };
@@ -323,6 +364,7 @@ export function EnergyFlowDiagram({
   const colors = {
     solar: "#F59E0B",
     battery: "#10B981",
+    batteryDischarging: "#EF4444", // Red for discharging
     home: "#A855F7",
     grid: "#3B82F6",
     center: "#10B981",
@@ -373,13 +415,25 @@ export function EnergyFlowDiagram({
             color={colors.solar}
             power={solarPower}
           />
-          <FlowConnection
-            pathId="path-battery"
-            path={paths.centerToBattery}
-            color={colors.battery}
-            power={Math.abs(batteryPower)}
-            reverse={batteryPower < 0}
-          />
+          {isBatteryDischarging ? (
+            // When discharging, flow from battery to center (reverse direction, red color)
+            <FlowConnection
+              pathId="path-battery"
+              path={paths.batteryToCenter}
+              color={colors.batteryDischarging}
+              power={Math.abs(batteryPower)}
+              reverse={false}
+            />
+          ) : (
+            // When charging, flow from center to battery (normal direction, green color)
+            <FlowConnection
+              pathId="path-battery"
+              path={paths.centerToBattery}
+              color={colors.battery}
+              power={Math.abs(batteryPower)}
+              reverse={false}
+            />
+          )}
           <FlowConnection
             pathId="path-home"
             path={paths.centerToHome}

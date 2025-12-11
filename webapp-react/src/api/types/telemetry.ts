@@ -63,6 +63,26 @@ export interface BackendHomeTelemetry {
     import_kwh?: number
     export_kwh?: number
   }>
+  daily_energy?: {
+    solar_energy_kwh?: number
+    load_energy_kwh?: number
+    battery_charge_energy_kwh?: number
+    battery_discharge_energy_kwh?: number
+    grid_import_energy_kwh?: number
+    grid_export_energy_kwh?: number
+    self_consumption_kwh?: number
+    self_sufficiency_pct?: number
+  }
+  monthly_energy?: {
+    solar_energy_kwh?: number
+    grid_import_energy_kwh?: number
+    grid_export_energy_kwh?: number
+  }
+  financial_metrics?: {
+    total_bill_pkr?: number
+    total_saved_pkr?: number
+    co2_prevented_kg?: number
+  }
   _metadata?: Record<string, any>
   metadata?: Record<string, any>
 }
@@ -97,6 +117,8 @@ export interface BackendArrayTelemetry {
     voltage_v?: number
     current_a?: number
     power_w?: number
+    temperature_c?: number
+    temperature?: number
   }>
   _metadata?: Record<string, any>
 }
@@ -215,6 +237,21 @@ export interface HomeTelemetryData extends TelemetryData {
     importKwh: number
     exportKwh: number
   }>
+  financialMetrics?: {
+    totalBillPkr: number
+    totalSavedPkr: number
+    co2PreventedKg: number
+  }
+  dailyEnergy?: {
+    solar: number
+    load: number
+    batteryCharge: number
+    batteryDischarge: number
+    gridImport: number
+    gridExport: number
+    selfConsumption: number
+    selfSufficiency: number
+  }
 }
 
 export interface BatteryData {

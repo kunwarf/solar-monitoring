@@ -1,6 +1,9 @@
+import React from "react";
 import { motion } from "framer-motion";
 import { Zap, ArrowUpRight, ArrowDownLeft, Activity, Gauge, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHomeTelemetry, useHourlyEnergy } from "@root/api/hooks";
+import { useDevicesData } from "@/data/mockDataHooks";
 import {
   BarChart,
   Bar,
@@ -22,36 +25,7 @@ interface MeterTelemetryProps {
   };
 }
 
-// Phase data
-const phaseData = [
-  {
-    phase: "L1",
-    voltage: 238.2,
-    current: 12.4,
-    power: 2.85,
-    powerFactor: 0.97,
-    direction: "import" as const,
-    frequency: 50.01,
-  },
-  {
-    phase: "L2",
-    voltage: 236.8,
-    current: 8.6,
-    power: 1.92,
-    powerFactor: 0.95,
-    direction: "export" as const,
-    frequency: 50.02,
-  },
-  {
-    phase: "L3",
-    voltage: 239.1,
-    current: 10.2,
-    power: 2.31,
-    powerFactor: 0.96,
-    direction: "import" as const,
-    frequency: 50.01,
-  },
-];
+// Phase data is now calculated from telemetry in the component
 
 // Historical import/export data
 const generateHistoricalData = () => {
@@ -73,16 +47,19 @@ const generateHistoricalData = () => {
 
 const historicalData = generateHistoricalData();
 
-// Cumulative data for today
-const todayStats = {
-  totalImport: 12.4,
-  totalExport: 8.6,
-  peakImport: 4.2,
-  peakExport: 6.8,
-  netEnergy: -3.8, // negative = net export
-};
+// This is now calculated from hourly data in the component
 
-const PhaseCard = ({ data, index }: { data: typeof phaseData[0]; index: number }) => (
+interface PhaseData {
+  phase: string;
+  voltage: number;
+  current: number;
+  power: number;
+  powerFactor: number;
+  direction: "import" | "export";
+  frequency: number;
+}
+
+const PhaseCard = ({ data, index }: { data: PhaseData; index: number }) => (
   <motion.div
     initial={{ opacity: 0, x: -20 }}
     animate={{ opacity: 1, x: 0 }}
@@ -162,6 +139,111 @@ const PhaseCard = ({ data, index }: { data: typeof phaseData[0]; index: number }
 );
 
 const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
+  // Fetch home telemetry to get meter data
+  const { data: homeTelemetry } = useHomeTelemetry({ refetchInterval: 5000 });
+  
+  // Fetch hourly energy for charts
+  const { data: hourlyData } = useHourlyEnergy({ inverterId: undefined });
+  
+  // Get devices to find meter info
+  const devices = useDevicesData();
+  const meterDevice = devices.find(d => d.id === device.id && d.type === "meter");
+  
+  // Get meter data from home telemetry
+  const meterData = homeTelemetry?.meters?.find(m => m.id === device.id);
+  
+  // Calculate today's stats from hourly data
+  const todayStats = React.useMemo(() => {
+    if (!hourlyData || hourlyData.length === 0) {
+      return {
+        totalImport: 0,
+        totalExport: 0,
+        peakImport: 0,
+        peakExport: 0,
+        netEnergy: 0,
+      };
+    }
+    
+    let totalImport = 0;
+    let totalExport = 0;
+    let peakImport = 0;
+    let peakExport = 0;
+    
+    hourlyData.forEach(item => {
+      if (item.grid > 0) {
+        totalImport += item.grid;
+        peakImport = Math.max(peakImport, item.grid);
+      } else {
+        totalExport += Math.abs(item.grid);
+        peakExport = Math.max(peakExport, Math.abs(item.grid));
+      }
+    });
+    
+    return {
+      totalImport,
+      totalExport,
+      peakImport,
+      peakExport,
+      netEnergy: totalExport - totalImport,
+    };
+  }, [hourlyData]);
+  
+  // Use meter data or fallback
+  const currentPower = meterData?.power ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Power")?.value || "0") : 0);
+  const importKwh = meterData?.importKwh ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Import")?.value || "0") : 0);
+  const exportKwh = meterData?.exportKwh ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Export")?.value || "0") : 0);
+  
+  // Generate phase data (if three-phase, otherwise single phase)
+  const isThreePhase = homeTelemetry?.isThreePhase ?? false;
+  const phaseData = isThreePhase && homeTelemetry ? [
+    {
+      phase: "L1",
+      voltage: 238.0, // Not available in API, using placeholder
+      current: Math.abs(homeTelemetry.loadL1 ?? 0) * 1000 / 238, // Estimate from power
+      power: Math.abs(homeTelemetry.loadL1 ?? 0),
+      powerFactor: 0.97,
+      direction: (homeTelemetry.gridL1 ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: 50.0,
+    },
+    {
+      phase: "L2",
+      voltage: 238.0,
+      current: Math.abs(homeTelemetry.loadL2 ?? 0) * 1000 / 238,
+      power: Math.abs(homeTelemetry.loadL2 ?? 0),
+      powerFactor: 0.95,
+      direction: (homeTelemetry.gridL2 ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: 50.0,
+    },
+    {
+      phase: "L3",
+      voltage: 238.0,
+      current: Math.abs(homeTelemetry.loadL3 ?? 0) * 1000 / 238,
+      power: Math.abs(homeTelemetry.loadL3 ?? 0),
+      powerFactor: 0.96,
+      direction: (homeTelemetry.gridL3 ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: 50.0,
+    },
+  ] : [
+    {
+      phase: "L1",
+      voltage: 238.0,
+      current: Math.abs(currentPower) * 1000 / 238,
+      power: Math.abs(currentPower),
+      powerFactor: 0.97,
+      direction: currentPower < 0 ? "export" as const : "import" as const,
+      frequency: 50.0,
+    },
+  ];
+  
+  // Use hourly data for charts
+  const chartData = hourlyData && hourlyData.length > 0
+    ? hourlyData.map(item => ({
+        time: item.time,
+        import: item.grid > 0 ? item.grid : 0,
+        export: item.grid < 0 ? Math.abs(item.grid) : 0,
+        consumption: item.load,
+      }))
+    : historicalData;
   const totalPower = phaseData.reduce((sum, p) => sum + (p.direction === "import" ? p.power : -p.power), 0);
   const avgPowerFactor = phaseData.reduce((sum, p) => sum + p.powerFactor, 0) / phaseData.length;
   const avgVoltage = phaseData.reduce((sum, p) => sum + p.voltage, 0) / phaseData.length;
@@ -300,7 +382,7 @@ const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
         
         <div className="h-[250px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={historicalData}>
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
               <XAxis 
                 dataKey="time" 

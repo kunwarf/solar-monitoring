@@ -4,7 +4,7 @@ import { EnergyFlowDiagram } from "@/components/dashboard/EnergyFlowDiagram";
 import { EnergyChart } from "@/components/dashboard/EnergyChart";
 import { DeviceOverview } from "@/components/dashboard/DeviceOverview";
 import { HierarchicalDeviceOverview } from "@/components/dashboard/HierarchicalDeviceOverview";
-import { Sun, Battery, Home, Zap, TrendingUp, ArrowDownUp, Leaf, DollarSign, Receipt, Target, Gauge } from "lucide-react";
+import { Sun, Battery, Home, Zap, TrendingUp, ArrowDownUp, Leaf, DollarSign, Receipt, Target, Gauge, ArrowDown, ArrowUp } from "lucide-react";
 import { useEnergyStatsData, useChartData } from "@/data/mockDataHooks";
 
 const Index = () => {
@@ -19,8 +19,8 @@ const Index = () => {
       />
       
       <div className="p-6 space-y-6">
-        {/* Financial & Savings Overview */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Row 1: Financial & Daily Energy Stats (6 cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             title="Monthly Bill Estimate"
             value={energyStats.monthlyBillAmount.toFixed(2)}
@@ -47,56 +47,49 @@ const Index = () => {
             trend={{ value: 15, isPositive: true }}
             delay={0.2}
           />
-        </div>
-
-        {/* Real-time Power Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Solar Production"
-            value={energyStats.solarPower.toFixed(1)}
-            unit="kW"
-            icon={Sun}
-            variant="solar"
-            trend={{ value: 12, isPositive: true }}
+            title="Battery Charge Energy"
+            value={energyStats.batteryChargeEnergy.toFixed(1)}
+            unit="kWh"
+            icon={ArrowDown}
+            variant="battery"
             delay={0.3}
           />
           <StatCard
-            title="Battery Level"
-            value={energyStats.batteryLevel.toString()}
-            unit="%"
-            icon={Battery}
+            title="Battery Discharge Energy"
+            value={energyStats.batteryDischargeEnergy.toFixed(1)}
+            unit="kWh"
+            icon={ArrowUp}
             variant="battery"
-            trend={{ value: 5, isPositive: true }}
             delay={0.4}
           />
           <StatCard
-            title="Home Consumption"
-            value={energyStats.consumption.toFixed(1)}
-            unit="kW"
+            title="Load Energy"
+            value={energyStats.loadEnergy.toFixed(1)}
+            unit="kWh"
             icon={Home}
             variant="consumption"
             delay={0.5}
           />
-          <StatCard
-            title="Grid Export"
-            value={energyStats.gridPower.toFixed(1)}
-            unit="kW"
-            icon={Zap}
-            variant="grid"
-            trend={{ value: 8, isPositive: true }}
-            delay={0.6}
-          />
         </div>
 
-        {/* Daily Production Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Row 2: Grid Import & Production Stats (6 cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <StatCard
+            title="Grid Import"
+            value={energyStats.gridImportEnergy.toFixed(1)}
+            unit="kWh"
+            icon={ArrowDown}
+            variant="grid"
+            delay={0.6}
+          />
           <StatCard
             title="Today's Production"
             value={energyStats.dailyProduction.toFixed(1)}
             unit="kWh"
-            icon={TrendingUp}
+            icon={Sun}
             variant="solar"
-            delay={0.7}
+            delay={0.8}
           />
           <StatCard
             title="Predicted vs Actual"
@@ -104,15 +97,15 @@ const Index = () => {
             unit="kWh"
             icon={Target}
             variant="prediction"
-            trend={{ value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction }}
-            delay={0.8}
+            trend={energyStats.dailyPrediction > 0 ? { value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction } : undefined}
+            delay={0.9}
           />
           <StatCard
             title="Avg kWh/kWp"
             value={energyStats.avgKwPerKwp.toFixed(2)}
             unit="kWh/kWp"
             icon={Gauge}
-            delay={0.9}
+            delay={1.0}
           />
           <StatCard
             title="Self-Consumption"
@@ -120,15 +113,15 @@ const Index = () => {
             unit="%"
             icon={Home}
             variant="consumption"
-            delay={1.0}
+            delay={1.1}
           />
           <StatCard
             title="Grid Exported"
-            value={energyStats.gridExported.toFixed(1)}
+            value={energyStats.gridExportEnergy.toFixed(1)}
             unit="kWh"
-            icon={ArrowDownUp}
+            icon={ArrowUp}
             variant="grid"
-            delay={1.1}
+            delay={1.2}
           />
         </div>
 

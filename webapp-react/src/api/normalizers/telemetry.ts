@@ -84,6 +84,21 @@ export function normalizeHomeTelemetry(
       importKwh: meter.import_kwh || 0,
       exportKwh: meter.export_kwh || 0,
     })),
+    financialMetrics: data.financial_metrics ? {
+      totalBillPkr: data.financial_metrics.total_bill_pkr || 0,
+      totalSavedPkr: data.financial_metrics.total_saved_pkr || 0,
+      co2PreventedKg: data.financial_metrics.co2_prevented_kg || 0,
+    } : undefined,
+    dailyEnergy: data.daily_energy ? {
+      solar: data.daily_energy.solar_energy_kwh || 0,
+      load: data.daily_energy.load_energy_kwh || 0,
+      batteryCharge: data.daily_energy.battery_charge_energy_kwh || 0,
+      batteryDischarge: data.daily_energy.battery_discharge_energy_kwh || 0,
+      gridImport: data.daily_energy.grid_import_energy_kwh || 0,
+      gridExport: data.daily_energy.grid_export_energy_kwh || 0,
+      selfConsumption: data.daily_energy.self_consumption_kwh || 0,
+      selfSufficiency: data.daily_energy.self_sufficiency_pct || 0,
+    } : undefined,
   }
 }
 

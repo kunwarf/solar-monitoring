@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Cpu, Gauge, Settings, Activity, Sun, Home, Zap, ArrowDown, ArrowUp } from "lucide-react";
+import { Cpu, Gauge, Settings, Activity, Sun, Home, Zap, ArrowDown, ArrowUp, Battery } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -94,37 +94,35 @@ function DeviceIcon({ type, className, soc = 78 }: { type: "inverter" | "battery
   return <Gauge className={className} />;
 }
 
-// Get telemetry metrics based on device type (matching dashboard)
-const getDeviceMetrics = (type: "inverter" | "battery" | "meter") => {
-  if (type === "inverter") {
-    return [
-      { label: "Solar", value: "4.2", unit: "kW", icon: Sun, color: "text-warning" },
-      { label: "Grid", value: "0.8", unit: "kW", icon: Zap, color: "text-primary" },
-      { label: "Load", value: "2.1", unit: "kW", icon: Home, color: "text-success" },
-      { label: "Battery", value: "1.3", unit: "kW", iconType: "battery-dynamic", color: "text-cyan-400" },
-    ];
-  }
-  if (type === "battery") {
-    const isCharging = true;
-    return [
-      { label: "SOC", value: "78", unit: "%", iconType: "battery-dynamic", color: "text-success" },
-      { label: isCharging ? "Charging" : "Discharging", value: "1.3", unit: "kW", icon: isCharging ? ArrowDown : ArrowUp, color: isCharging ? "text-success" : "text-warning" },
-      { label: "Voltage", value: "52.4", unit: "V", icon: Gauge, color: "text-muted-foreground" },
-      { label: "Temp", value: "28", unit: "°C", icon: Gauge, color: "text-muted-foreground" },
-    ];
-  }
-  if (type === "meter") {
-    const currentPower = 0.3;
-    const netExport = 5.7;
-    const isExport = netExport > 0;
-    return [
-      { label: "Power", value: Math.abs(currentPower).toFixed(1), unit: "kW", icon: currentPower >= 0 ? ArrowDown : ArrowUp, color: currentPower >= 0 ? "text-destructive" : "text-success" },
-      { label: "Import", value: "2.5", unit: "kWh", icon: ArrowDown, color: "text-destructive" },
-      { label: "Export", value: "8.2", unit: "kWh", icon: ArrowUp, color: "text-success" },
-      { label: isExport ? "Net Export" : "Net Import", value: Math.abs(netExport).toFixed(1), unit: "kWh", icon: isExport ? ArrowUp : ArrowDown, color: isExport ? "text-success" : "text-destructive" },
-    ];
-  }
-  return [];
+// Icon mapping for metric labels
+const getMetricIcon = (label: string, type: "inverter" | "battery" | "meter") => {
+  const labelLower = label.toLowerCase();
+  if (labelLower.includes("solar") || labelLower.includes("production")) return Sun;
+  if (labelLower.includes("grid")) return Zap;
+  if (labelLower.includes("load") || labelLower.includes("consumption")) return Home;
+  if (labelLower.includes("battery") || labelLower.includes("bat")) return Battery;
+  if (labelLower.includes("soc") || labelLower.includes("charge")) return Battery;
+  if (labelLower.includes("charging") || labelLower.includes("charge")) return ArrowDown;
+  if (labelLower.includes("discharging") || labelLower.includes("discharge")) return ArrowUp;
+  if (labelLower.includes("import")) return ArrowDown;
+  if (labelLower.includes("export")) return ArrowUp;
+  if (labelLower.includes("voltage") || labelLower.includes("volt")) return Gauge;
+  if (labelLower.includes("temp") || labelLower.includes("temperature")) return Gauge;
+  if (labelLower.includes("power")) return type === "meter" ? (labelLower.includes("export") ? ArrowUp : ArrowDown) : Zap;
+  return Gauge;
+};
+
+const getMetricColor = (label: string, type: "inverter" | "battery" | "meter") => {
+  const labelLower = label.toLowerCase();
+  if (labelLower.includes("solar") || labelLower.includes("production")) return "text-warning";
+  if (labelLower.includes("grid")) return "text-primary";
+  if (labelLower.includes("load") || labelLower.includes("consumption")) return "text-success";
+  if (labelLower.includes("battery") || labelLower.includes("bat") || labelLower.includes("soc")) return "text-cyan-400";
+  if (labelLower.includes("charging") || labelLower.includes("charge")) return "text-success";
+  if (labelLower.includes("discharging") || labelLower.includes("discharge")) return "text-warning";
+  if (labelLower.includes("import")) return "text-destructive";
+  if (labelLower.includes("export")) return "text-success";
+  return "text-muted-foreground";
 };
 
 export function DeviceCard({
@@ -134,13 +132,16 @@ export function DeviceCard({
   status,
   model,
   serialNumber,
+  metrics,
   onConfigure,
   onViewTelemetry,
   delay = 0,
 }: DeviceCardProps) {
   const colors = typeColors[type];
   const statusConfig = statusLabels[status];
-  const telemetryMetrics = getDeviceMetrics(type);
+  
+  // Use actual metrics from props, but ensure we have at least 4 for the grid
+  const telemetryMetrics = metrics.length > 0 ? metrics : [];
 
   return (
     <motion.div
@@ -156,7 +157,13 @@ export function DeviceCard({
       {/* Header */}
       <div className="flex items-center gap-4 mb-4">
         <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center", colors.bg)}>
-          <DeviceIcon type={type} className={cn("w-6 h-6", colors.icon)} soc={78} />
+          <DeviceIcon 
+            type={type} 
+            className={cn("w-6 h-6", colors.icon)} 
+            soc={type === "battery" && telemetryMetrics.length > 0 
+              ? parseFloat(telemetryMetrics.find(m => m.label.toLowerCase().includes("soc"))?.value || "0") 
+              : 78} 
+          />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -173,22 +180,27 @@ export function DeviceCard({
       {/* Telemetry Metrics Grid - matching dashboard style */}
       <div className="grid grid-cols-2 gap-2 mb-4">
         {telemetryMetrics.map((metric, idx) => {
-          const soc = metric.label === "SOC" ? parseFloat(metric.value) : 78;
+          const Icon = getMetricIcon(metric.label, type);
+          const color = getMetricColor(metric.label, type);
+          const isBatteryIcon = metric.label.toLowerCase().includes("soc") || 
+                               (metric.label.toLowerCase().includes("battery") && type === "battery");
+          const soc = isBatteryIcon && type === "battery" ? parseFloat(metric.value) : undefined;
+          
           return (
             <div
               key={idx}
               className="flex items-center gap-2 p-2 rounded-md bg-background/50"
             >
-              {metric.iconType === "battery-dynamic" ? (
-                <DynamicBatteryIcon className={cn("w-4 h-4", metric.color)} soc={soc} />
-              ) : metric.icon ? (
-                <metric.icon className={cn("w-4 h-4", metric.color)} />
-              ) : null}
-              <div className="min-w-0">
+              {isBatteryIcon && soc !== undefined ? (
+                <DynamicBatteryIcon className={cn("w-4 h-4", color)} soc={soc} />
+              ) : (
+                <Icon className={cn("w-4 h-4", color)} />
+              )}
+              <div className="min-w-0 flex-1">
                 <p className="text-[10px] text-muted-foreground truncate">{metric.label}</p>
-                <p className="font-mono text-sm font-medium text-foreground">
+                <p className={cn("font-mono text-sm font-medium truncate", color)}>
                   {metric.value}
-                  <span className="text-xs text-muted-foreground ml-0.5">{metric.unit}</span>
+                  <span className="text-[10px] text-muted-foreground ml-0.5">{metric.unit}</span>
                 </p>
               </div>
             </div>

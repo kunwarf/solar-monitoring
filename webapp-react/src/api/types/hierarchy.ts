@@ -26,6 +26,19 @@ export interface BackendConfigResponse {
       name?: string
       inverter_ids?: string[]
     }>
+    inverters?: Array<{
+      id: string
+      name?: string
+      array_id?: string
+    }>
+    battery_banks?: Array<{
+      id: string
+      name?: string
+    }>
+    meters?: Array<{
+      id: string
+      name?: string
+    }>
     battery_bank_arrays?: Array<{
       id: string
       name?: string
@@ -60,5 +73,10 @@ export interface HomeHierarchy {
   name: string
   inverterArrays: InverterArray[]
   batteryArrays: BatteryArray[]
+  _deviceNames?: {
+    inverters: Map<string, string>
+    batteries: Map<string, string>
+    meters: Map<string, string>
+  }
 }
 

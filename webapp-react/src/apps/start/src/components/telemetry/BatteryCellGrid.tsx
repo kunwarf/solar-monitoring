@@ -1,6 +1,8 @@
+import React from "react";
 import { motion } from "framer-motion";
 import { Thermometer, Zap, Battery, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useBatteryTelemetry, useHourlyEnergy, useHomeHierarchy } from "@root/api/hooks";
 import {
   Tooltip,
   TooltipContent,
@@ -312,17 +314,279 @@ const PackStats = ({ cells }: { cells: CellData[] }) => {
 };
 
 const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
-  // Battery pack summary stats
-  const packSummary = {
-    totalVoltage: 52.4,
-    totalCurrent: 18.6,
-    totalPower: 2.1,
-    soc: 78,
-    health: 94,
-    cycles: 342,
-    temperature: 28,
-    status: "charging" as const,
-  };
+  // Get hierarchy to find battery array info
+  const { data: hierarchy } = useHomeHierarchy();
+  
+  // Device now uses actual bank ID (e.g., "jkbms_bank_ble", "battery1")
+  // Check if device has batteryBankId context field (from DataProvider)
+  const batteryBankId = (device as any)?.batteryBankId || device?.id;
+  
+  // Find battery array from hierarchy by checking all systems
+  let batteryArray: any = null;
+  if (hierarchy?.systems) {
+    for (const system of hierarchy.systems) {
+      for (const ba of system.batteryArrays || []) {
+        // Check if device ID matches any battery in this array
+        const matchingBattery = ba.batteries?.find((b: any) => 
+          b.id === batteryBankId || 
+          b.batteryBankId === batteryBankId ||
+          device?.id === b.id
+        );
+        if (matchingBattery) {
+          batteryArray = ba;
+          break;
+        }
+      }
+      if (batteryArray) break;
+    }
+  }
+  
+  // Fetch battery telemetry using the actual bank ID
+  // This is now a direct lookup instead of fetching all and matching
+  const batteryTelemetry = useBatteryTelemetry(batteryBankId, {
+    refetchInterval: 5000,
+  });
+  
+  // Get battery data - should be direct match now
+  const battery = batteryTelemetry.data;
+  
+  // Fetch hourly energy for charts
+  const { data: hourlyData } = useHourlyEnergy({ inverterId: undefined });
+  
+  // Calculate aggregated pack summary from all devices
+  const packSummary = React.useMemo(() => {
+    if (!battery) {
+      return {
+        totalVoltage: 0,
+        totalCurrent: 0,
+        totalPower: 0,
+        soc: 0,
+        health: 0,
+        cycles: 0,
+        temperature: 0,
+        status: "charging" as const,
+      };
+    }
+    
+    // Aggregate from all devices if available
+    if (battery.devices && battery.devices.length > 0) {
+      const totalVoltage = battery.devices.reduce((sum: number, dev: any) => sum + (dev.voltage || 0), 0);
+      const totalCurrent = battery.devices.reduce((sum: number, dev: any) => sum + (dev.current || 0), 0);
+      const avgSoc = battery.devices.reduce((sum: number, dev: any) => sum + (dev.soc || 0), 0) / battery.devices.length;
+      const avgTemp = battery.devices.reduce((sum: number, dev: any) => sum + (dev.temperature || 0), 0) / battery.devices.length;
+      const totalCycles = battery.devices.reduce((sum: number, dev: any) => sum + (dev.cycles || 0), 0);
+      const avgSoh = battery.devices.reduce((sum: number, dev: any) => sum + (dev.soh || 0), 0) / battery.devices.length;
+      
+      return {
+        totalVoltage: totalVoltage || battery.voltage || 0,
+        totalCurrent: totalCurrent || battery.current || 0,
+        totalPower: (totalCurrent || battery.current || 0) * (totalVoltage || battery.voltage || 0) / 1000,
+        soc: avgSoc || battery.soc || 0,
+        health: avgSoh || 94,
+        cycles: totalCycles || 0,
+        temperature: avgTemp || battery.temperature || 0,
+        status: (totalCurrent || battery.current || 0) >= 0 ? "charging" as const : "discharging" as const,
+      };
+    }
+    
+    // Fallback to battery-level data
+    return {
+      totalVoltage: battery.voltage ?? 0,
+      totalCurrent: battery.current ?? 0,
+      totalPower: (battery.current ?? 0) * (battery.voltage ?? 0) / 1000,
+      soc: battery.soc ?? 0,
+      health: 94,
+      cycles: 0,
+      temperature: battery.temperature ?? 0,
+      status: (battery.current ?? 0) >= 0 ? "charging" as const : "discharging" as const,
+    };
+  }, [battery]);
+  
+  // Transform cells data from battery devices or cells array
+  const transformedPacks = React.useMemo(() => {
+    if (!battery) return batteryPacks;
+    
+    const packs: Array<{ id: number; name: string; cells: CellData[] }> = [];
+    
+    // Check for cells_data in raw (from backend API)
+    const rawData = battery.raw as any;
+    const cellsData = rawData?.cells_data;
+    
+    if (cellsData && Array.isArray(cellsData) && cellsData.length > 0) {
+      // Use cells_data structure from backend
+      cellsData.forEach((batteryData: any, batteryIdx: number) => {
+        const cells = batteryData.cells || [];
+        if (cells.length > 0) {
+          const transformedCells: CellData[] = cells.map((cell: any, idx: number) => {
+            const cellVoltage = cell.voltage ?? 0;
+            const cellTemp = cell.temperature ?? batteryData.temperature ?? battery.temperature ?? 0;
+            const cellSoc = cell.soc ?? batteryData.soc ?? battery.soc ?? 0;
+            
+            // Determine cell status based on voltage
+            let status: CellData["status"] = "normal";
+            if (cellVoltage < 3.0) {
+              status = "critical";
+            } else if (cellVoltage < 3.2) {
+              status = "warning";
+            } else if (Math.random() > 0.85) {
+              status = "balancing";
+            }
+            
+            return {
+              id: batteryIdx * 1000 + idx + 1,
+              voltage: cellVoltage,
+              temperature: cellTemp,
+              soc: cellSoc,
+              health: batteryData.soh ?? 90 + Math.random() * 10,
+              status,
+            };
+          });
+          
+          if (transformedCells.length > 0) {
+            // Get battery bank name from device name map (preferred) or fallback to array name
+            const batteryBankId = batteryArray?.batteryBankIds?.[batteryIdx] || batteryArray?.batteryBankIds?.[0];
+            const batteryBankName = (hierarchy as any)?._deviceNames?.batteryBanks?.get(batteryBankId || '') ||
+                                   (batteryArray?.name ? batteryArray.name.replace(' Array', ' Battery Bank') : null) ||
+                                   "Battery Bank";
+            const batteryName = batteryBankName ? 
+              `${batteryBankName} #${batteryIdx + 1}` : 
+              `Battery #${batteryIdx + 1}`;
+            
+            packs.push({
+              id: batteryData.power || batteryIdx + 1, // Use power field as battery index
+              name: batteryName,
+              cells: transformedCells,
+            });
+          }
+        }
+      });
+    } else if (battery.cells && battery.cells.length > 0) {
+      // Use cells array, group by batteryIndex
+      const cellsByBattery = new Map<number, typeof battery.cells>();
+      battery.cells.forEach(cell => {
+        const batteryIdx = cell.batteryIndex;
+        if (!cellsByBattery.has(batteryIdx)) {
+          cellsByBattery.set(batteryIdx, []);
+        }
+        cellsByBattery.get(batteryIdx)!.push(cell);
+      });
+      
+      cellsByBattery.forEach((cells, batteryIdx) => {
+        // Find corresponding device for this battery index
+        const device = battery.devices?.find((d: any) => d.index === batteryIdx || d.power === batteryIdx);
+        
+        const transformedCells: CellData[] = cells.map((cell, idx) => {
+          const cellVoltage = cell.voltage ?? 0;
+          const cellTemp = cell.temperature ?? device?.temperature ?? battery.temperature ?? 0;
+          const cellSoc = cell.soc ?? device?.soc ?? battery.soc ?? 0;
+          
+          let status: CellData["status"] = "normal";
+          if (cellVoltage < 3.0) {
+            status = "critical";
+          } else if (cellVoltage < 3.2) {
+            status = "warning";
+          } else if (Math.random() > 0.85) {
+            status = "balancing";
+          }
+          
+          return {
+            id: batteryIdx * 1000 + idx + 1,
+            voltage: cellVoltage,
+            temperature: cellTemp,
+            soc: cellSoc,
+            health: device?.soh ?? 90 + Math.random() * 10,
+            status,
+          };
+        });
+        
+        if (transformedCells.length > 0) {
+          // Get battery bank name from device name map (preferred) or fallback to array name
+          const device = battery.devices?.find((d: any) => d.index === batteryIdx || d.power === batteryIdx);
+          const batteryBankId = batteryArray?.batteryBankIds?.[batteryIdx] || batteryArray?.batteryBankIds?.[0];
+          const batteryBankName = (hierarchy as any)?._deviceNames?.batteryBanks?.get(batteryBankId || '') ||
+                                 (batteryArray?.name ? batteryArray.name.replace(' Array', ' Battery Bank') : null) ||
+                                 (device ? null : null) ||
+                                 "Battery Bank";
+          const batteryName = batteryBankName ? 
+            `${batteryBankName} #${batteryIdx + 1}` : 
+            `Battery #${batteryIdx + 1}`;
+          
+          packs.push({
+            id: batteryIdx + 1,
+            name: batteryName,
+            cells: transformedCells,
+          });
+        }
+      });
+    } else if (battery.devices && battery.devices.length > 0) {
+      // Use devices array - treat each device as a pack
+      // Calculate cells per battery from battery data
+      const cellsPerBattery = battery.cellsPerBattery || 16;
+      
+      battery.devices.forEach((dev, packIdx) => {
+        // Get cells for this device from cells array if available
+        const deviceCells = battery.cells?.filter((c: any) => 
+          c.batteryIndex === dev.index || c.batteryIndex === packIdx
+        ) || [];
+        
+        let cells: CellData[] = [];
+        if (deviceCells.length > 0) {
+          // Use actual cell data
+          cells = deviceCells.map((cell: any, idx: number) => ({
+            id: packIdx * 1000 + idx + 1,
+            voltage: cell.voltage ?? 0,
+            temperature: cell.temperature ?? dev.temperature ?? battery.temperature ?? 0,
+            soc: cell.soc ?? dev.soc ?? battery.soc ?? 0,
+            health: dev.soh ?? 90 + Math.random() * 10,
+            status: (cell.voltage && cell.voltage < 3.0) ? "critical" as const
+              : (cell.voltage && cell.voltage < 3.2) ? "warning" as const
+              : Math.random() > 0.85 ? "balancing" as const
+              : "normal" as const,
+          }));
+        } else {
+          // Fallback: divide voltage across cells
+          const cellVoltage = (dev.voltage ?? battery.voltage ?? 0) / cellsPerBattery;
+          cells = Array.from({ length: cellsPerBattery }, (_, idx) => ({
+            id: packIdx * 1000 + idx + 1,
+            voltage: cellVoltage,
+            temperature: dev.temperature ?? battery.temperature ?? 0,
+            soc: dev.soc ?? battery.soc ?? 0,
+            health: dev.soh ?? 90 + Math.random() * 10,
+            status: "normal" as const,
+          }));
+        }
+        
+        // Get battery bank name from device name map (preferred) or fallback to array name
+        const batteryBankId = batteryArray?.batteryBankIds?.[packIdx] || batteryArray?.batteryBankIds?.[0];
+        const batteryBankName = (hierarchy as any)?._deviceNames?.batteryBanks?.get(batteryBankId || '') ||
+                               (batteryArray?.name ? batteryArray.name.replace(' Array', ' Battery Bank') : null) ||
+                               "Battery Bank";
+        const batteryName = batteryBankName ? 
+          `${batteryBankName} #${packIdx + 1}` : 
+          `Battery #${packIdx + 1}`;
+        
+        packs.push({
+          id: dev.index || packIdx + 1,
+          name: batteryName,
+          cells,
+        });
+      });
+    }
+    
+    return packs.length > 0 ? packs : batteryPacks;
+  }, [battery]);
+  
+  // Use hourly data for charts
+  const chartData = hourlyData && hourlyData.length > 0
+    ? hourlyData.map(item => ({
+        time: item.time,
+        soc: packSummary.soc,
+        voltage: packSummary.totalVoltage,
+        current: packSummary.totalCurrent,
+        temperature: packSummary.temperature,
+        power: packSummary.totalPower,
+      }))
+    : historicalData;
 
   return (
     <div className="space-y-6">
@@ -443,7 +707,7 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
         </div>
         
         <div className="space-y-4">
-          {batteryPacks.map((pack) => (
+          {transformedPacks.map((pack) => (
             <div key={pack.id} className="border border-border/50 rounded-lg p-3 bg-secondary/10">
               <div className="flex items-center gap-2 mb-2">
                 <Battery className="w-4 h-4 text-battery" />
@@ -491,7 +755,7 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
         
         <div className="h-[200px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={historicalData}>
+            <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="socGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(var(--battery))" stopOpacity={0.3} />
