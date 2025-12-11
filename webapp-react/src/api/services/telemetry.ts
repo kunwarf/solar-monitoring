@@ -12,9 +12,11 @@ import {
   normalizeBatteryData,
 } from '../normalizers/telemetry'
 import type { TelemetryData, HomeTelemetryData, BatteryData } from '../types/telemetry'
+import { HierarchyManager } from '../managers/HierarchyManager'
 
 /**
  * Telemetry service - handles all telemetry-related API calls
+ * Also updates hierarchy objects with telemetry data
  */
 export const telemetryService = {
   /**
@@ -30,7 +32,13 @@ export const telemetryService = {
       throw new Error('No telemetry data available')
     }
     
-    return normalizeTelemetry(response.now, 'inverter', inverterId)
+    const telemetry = normalizeTelemetry(response.now, 'inverter', inverterId)
+    
+    // Update hierarchy object
+    const manager = HierarchyManager.getInstance()
+    manager.updateTelemetry(inverterId, telemetry)
+    
+    return telemetry
   },
 
   /**
@@ -46,7 +54,14 @@ export const telemetryService = {
       throw new Error('No home telemetry data available')
     }
     
-    return normalizeHomeTelemetry(response.home)
+    const telemetry = normalizeHomeTelemetry(response.home)
+    
+    // Update hierarchy object (use system_id from response or default to 'system')
+    const systemId = (response.home as any).system_id || 'system'
+    const manager = HierarchyManager.getInstance()
+    manager.updateSystemTelemetry(systemId, telemetry)
+    
+    return telemetry
   },
 
   /**
@@ -62,7 +77,13 @@ export const telemetryService = {
       throw new Error('No array telemetry data available')
     }
     
-    return normalizeArrayTelemetry(response.now)
+    const telemetry = normalizeArrayTelemetry(response.now)
+    
+    // Update hierarchy object
+    const manager = HierarchyManager.getInstance()
+    manager.updateArrayTelemetry(arrayId, telemetry)
+    
+    return telemetry
   },
 
   /**
@@ -80,6 +101,7 @@ export const telemetryService = {
     
     // Preserve configured_banks for name lookup - add to each battery's raw data
     const configuredBanks = response.configured_banks || []
+    const manager = HierarchyManager.getInstance()
     
     // Handle multiple banks
     if (response.banks && response.banks.length > 0) {
@@ -89,6 +111,10 @@ export const telemetryService = {
         if (normalized.raw) {
           ;(normalized.raw as any).configured_banks = configuredBanks
         }
+        
+        // Update hierarchy object
+        manager.updateBatteryTelemetry(normalized.id, normalized)
+        
         return normalized
       })
     }
@@ -100,6 +126,10 @@ export const telemetryService = {
       if (normalized.raw) {
         ;(normalized.raw as any).configured_banks = configuredBanks
       }
+      
+      // Update hierarchy object
+      manager.updateBatteryTelemetry(normalized.id, normalized)
+      
       return normalized
     }
     

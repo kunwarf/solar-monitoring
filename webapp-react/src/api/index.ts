@@ -16,3 +16,9 @@ export * from './hooks'
 // Normalizers (if needed directly)
 export * from './normalizers'
 
+// Managers
+export * from './managers'
+
+// Models (hierarchy objects)
+export * from './models'
+

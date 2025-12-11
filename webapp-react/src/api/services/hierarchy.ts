@@ -9,11 +9,26 @@ import type {
   HomeHierarchy,
   SystemConfig,
 } from '../types/hierarchy'
+import { HierarchyManager } from '../managers/HierarchyManager'
 
 /**
  * Hierarchy service - handles home/array/battery hierarchy
  */
 export const hierarchyService = {
+  /**
+   * Load hierarchy into HierarchyManager
+   */
+  async loadHierarchy(): Promise<void> {
+    const manager = HierarchyManager.getInstance()
+    await manager.loadHierarchy()
+  },
+
+  /**
+   * Get HierarchyManager instance
+   */
+  getManager(): HierarchyManager {
+    return HierarchyManager.getInstance()
+  },
   /**
    * Get all arrays
    */
