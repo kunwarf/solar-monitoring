@@ -1255,7 +1255,7 @@ class SolarApp:
             log.info("Device discovery periodic scan disabled - discovery runs only on startup or device disconnection")
             
             # Start recovery task
-            if self.recovery_manager:
+            if hasattr(self, 'recovery_manager') and self.recovery_manager:
                 self._recovery_task = asyncio.create_task(self._recovery_loop())
                 log.info("Started device recovery task")
             log.info(f"Polling interval: {self.cfg.polling.interval_secs} seconds")
@@ -1467,7 +1467,7 @@ class SolarApp:
     
     async def _recovery_loop(self):
         """Periodic device recovery loop."""
-        if not self.recovery_manager:
+        if not hasattr(self, 'recovery_manager') or not self.recovery_manager:
             return
         
         while True:
@@ -2522,7 +2522,7 @@ class SolarApp:
             error_str = str(e).lower()
             if "client not connected" not in error_str and "not connected" not in error_str:
                 # This is a real failure (not just disconnection), handle it
-                if self.recovery_manager and rt.cfg.adapter.serial_port and self.device_registry:
+                if hasattr(self, 'recovery_manager') and self.recovery_manager and rt.cfg.adapter.serial_port and hasattr(self, 'device_registry') and self.device_registry:
                     # Try to find device in registry
                     devices = self.device_registry.get_all_devices()
                     for dev in devices:
