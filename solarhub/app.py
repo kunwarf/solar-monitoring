@@ -2158,7 +2158,7 @@ class SolarApp:
             tel = await rt.adapter.poll()
             
             # Reset failure count on successful poll (device is working)
-            if self.recovery_manager and rt.cfg.adapter.serial_port and self.device_registry:
+            if hasattr(self, 'recovery_manager') and self.recovery_manager and rt.cfg.adapter.serial_port and hasattr(self, 'device_registry') and self.device_registry:
                 # Try to find device in registry and mark as recovered if it was in recovery state
                 devices = self.device_registry.get_all_devices()
                 for dev in devices:
