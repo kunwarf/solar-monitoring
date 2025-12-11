@@ -160,7 +160,11 @@ class HierarchyLoader:
     def _load_systems(self, cur) -> List[sqlite3.Row]:
         """Load all systems from database."""
         try:
-            cur.execute("SELECT * FROM systems ORDER BY created_at")
+            # Check if created_at column exists
+            cur.execute("PRAGMA table_info(systems)")
+            columns = [row[1] for row in cur.fetchall()]
+            order_by = "ORDER BY created_at" if "created_at" in columns else ""
+            cur.execute(f"SELECT * FROM systems {order_by}")
             return cur.fetchall()
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
