@@ -928,24 +928,58 @@ class SolarApp:
                                 except Exception as e:
                                     log.error(f"Failed to publish discovery for battery unit {battery_unit.power}: {e}", exc_info=True)
             
-            # Publish HA discovery for home (accumulated power from all arrays)
+            # Publish HA discovery for systems and battery arrays from hierarchy
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                log.info("Publishing HA discovery for systems and battery arrays from hierarchy")
+                
+                for system_id, system in self.hierarchy_systems.items():
+                    # Publish system entities
+                    system_name = system.name or "Solar System"
+                    array_ids = [arr.id for arr in system.inverter_arrays]
+                    try:
+                        self.ha.publish_system_entities(
+                            system_id=system_id,
+                            system_name=system_name,
+                            array_ids=array_ids
+                        )
+                        log.info(f"HA discovery published for system {system_id} (state topic: {self.cfg.mqtt.base_topic}/systems/{system_id}/state)")
+                    except Exception as e:
+                        log.error(f"Failed to publish system discovery for {system_id}: {e}", exc_info=True)
+                    
+                    # Publish battery array entities
+                    for battery_array in system.battery_arrays:
+                        battery_array_id = battery_array.id
+                        battery_array_name = battery_array.name
+                        pack_ids = [pack.pack_id for pack in battery_array.battery_packs]
+                        try:
+                            self.ha.publish_battery_array_entities(
+                                battery_array_id=battery_array_id,
+                                battery_array_name=battery_array_name,
+                                pack_ids=pack_ids,
+                                system_id=system_id
+                            )
+                            log.info(f"HA discovery published for battery array {battery_array_id}")
+                        except Exception as e:
+                            log.error(f"Failed to publish battery array discovery for {battery_array_id}: {e}", exc_info=True)
+            
+            # Publish HA discovery for home (legacy support - accumulated power from all arrays)
             if getattr(self.cfg, "home", None):
                 home_cfg = self.cfg.home
                 home_id = getattr(home_cfg, "id", "home")
                 home_name = getattr(home_cfg, "name", None) or "Solar Home"
                 array_ids = list(self.arrays.keys()) if self.arrays else None
-                log.info(f"Publishing home discovery: home_id={home_id}, home_name={home_name}, array_ids={array_ids}")
+                log.info(f"Publishing home discovery (legacy): home_id={home_id}, home_name={home_name}, array_ids={array_ids}")
                 try:
                     self.ha.publish_home_entities(
                         home_id=home_id,
                         home_name=home_name,
                         array_ids=array_ids
                     )
-                    log.info(f"HA discovery published for home {home_id} (state topic: {self.cfg.mqtt.base_topic}/home/{home_id}/state)")
+                    log.info(f"HA discovery published for home {home_id} (legacy, state topic: {self.cfg.mqtt.base_topic}/home/{home_id}/state)")
                 except Exception as e:
                     log.error(f"Failed to publish home discovery: {e}", exc_info=True)
             
-            log.info("HA discovery published for arrays, battery packs, battery bank, and home")
+            log.info("HA discovery published for arrays, battery packs, battery bank, systems, battery arrays, and home")
         else:
             log.info("HA discovery disabled in configuration")
         

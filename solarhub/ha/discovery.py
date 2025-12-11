@@ -302,7 +302,7 @@ class HADiscoveryPublisher:
         """Get MQTT topic for home state."""
         return f"{self.base_topic}/home/{home_id}/state"
     
-    def publish_array_entities(self, array_id: str, array_name: Optional[str] = None, inverter_ids: Optional[List[str]] = None, pack_ids: Optional[List[str]] = None) -> None:
+    def publish_array_entities(self, array_id: str, array_name: Optional[str] = None, inverter_ids: Optional[List[str]] = None, pack_ids: Optional[List[str]] = None, system_id: Optional[str] = None) -> None:
         """
         Publish Home Assistant discovery entities for an array.
         
@@ -311,6 +311,7 @@ class HADiscoveryPublisher:
             array_name: Optional array name
             inverter_ids: List of inverter IDs in this array
             pack_ids: List of battery pack IDs attached to this array
+            system_id: Optional system ID (for via_device relationships)
         """
         device_id = f"array_{_sanitize_key(array_id)}"
         device_name = array_name or array_id.replace("_", " ").title()
@@ -323,9 +324,11 @@ class HADiscoveryPublisher:
             "manufacturer": "SolarHub",
         }
         
-        # Add via_device relationships if inverters/packs are provided
+        # Add via_device relationships - prefer system, then first inverter
         # Note: via_device should be a single string, not a list (HA MQTT discovery spec)
-        if inverter_ids:
+        if system_id:
+            device_info["via_device"] = f"system:{system_id}"
+        elif inverter_ids:
             # Use the first inverter as the via_device (HA only supports one)
             device_info["via_device"] = f"inverter:{inverter_ids[0]}"
         
@@ -393,14 +396,16 @@ class HADiscoveryPublisher:
         
         log.info(f"Published HA discovery for array {array_id}")
     
-    def publish_pack_entities(self, pack_id: str, pack_name: Optional[str] = None, array_id: Optional[str] = None) -> None:
+    def publish_pack_entities(self, pack_id: str, pack_name: Optional[str] = None, array_id: Optional[str] = None, battery_array_id: Optional[str] = None, system_id: Optional[str] = None) -> None:
         """
         Publish Home Assistant discovery entities for a battery pack.
         
         Args:
             pack_id: Battery pack ID
             pack_name: Optional pack name
-            array_id: Optional attached array ID
+            array_id: Optional attached inverter array ID (legacy)
+            battery_array_id: Optional battery array ID (for via_device relationships)
+            system_id: Optional system ID (for via_device relationships)
         """
         device_id = f"pack_{_sanitize_key(pack_id)}"
         device_name = pack_name or pack_id.replace("_", " ").title()
@@ -413,8 +418,13 @@ class HADiscoveryPublisher:
             "manufacturer": "SolarHub",
         }
         
-        # Add via_device relationship if attached to an array
-        if array_id:
+        # Add via_device relationship - prefer battery_array, then system, then inverter array
+        # Note: via_device should be a single string, not a list (HA MQTT discovery spec)
+        if battery_array_id:
+            device_info["via_device"] = f"battery_array:{battery_array_id}"
+        elif system_id:
+            device_info["via_device"] = f"system:{system_id}"
+        elif array_id:
             device_info["via_device"] = f"array:{array_id}"
         
         # Pack sensors
@@ -778,6 +788,146 @@ class HADiscoveryPublisher:
     def _home_state_topic(self, home_id: str = "home") -> str:
         """Get MQTT topic for home state."""
         return f"{self.base_topic}/home/{home_id}/state"
+    
+    def _system_state_topic(self, system_id: str) -> str:
+        """Get MQTT topic for system state."""
+        return f"{self.base_topic}/systems/{system_id}/state"
+    
+    def _battery_array_state_topic(self, battery_array_id: str) -> str:
+        """Get MQTT topic for battery array state."""
+        return f"{self.base_topic}/battery_arrays/{battery_array_id}/state"
+    
+    def publish_system_entities(self, system_id: str, system_name: Optional[str] = None, array_ids: Optional[List[str]] = None) -> None:
+        """
+        Publish Home Assistant discovery entities for system (accumulated power from all arrays).
+        
+        Args:
+            system_id: System ID
+            system_name: Optional system name
+            array_ids: List of array IDs in this system (for via_device relationships)
+        """
+        device_id = f"system_{_sanitize_key(system_id)}"
+        device_name = system_name or "Solar System"
+        state_topic = self._system_state_topic(system_id)
+        
+        device_info = {
+            "identifiers": [f"system:{system_id}"],
+            "name": device_name,
+            "model": "Solar System",
+            "manufacturer": "SolarHub",
+        }
+        
+        # Add via_device relationships if arrays are provided
+        # Note: via_device should be a single string, not a list (HA MQTT discovery spec)
+        if array_ids:
+            # Use the first array as the via_device (HA only supports one)
+            device_info["via_device"] = f"array:{array_ids[0]}"
+        
+        # System-level accumulated power sensors
+        sensors = [
+            ("total_pv_power_w", "Total Solar Power", "W", "power"),
+            ("total_load_power_w", "Total Load Power", "W", "power"),
+            ("total_grid_power_w", "Total Grid Power", "W", "power"),
+            ("total_batt_power_w", "Total Battery Power", "W", "power"),
+        ]
+        
+        for field_key, name, unit, device_class in sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "measurement",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published system sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish system sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        # Battery SOC sensor
+        object_id = f"{device_id}_avg_batt_soc_pct"
+        cfg = {
+            "name": f"{device_name} Average Battery SOC",
+            "unique_id": object_id,
+            "state_topic": state_topic,
+            "value_template": "{{ value_json.avg_batt_soc_pct }}",
+            "device": device_info,
+            "unit_of_measurement": "%",
+            "device_class": "battery",
+            "state_class": "measurement",
+        }
+        disc_topic = self._disc_topic("sensor", object_id)
+        try:
+            self.mqtt.pub(disc_topic, cfg, retain=True)
+            log.debug(f"Published system battery SOC discovery: {disc_topic}")
+        except Exception as e:
+            log.error(f"Failed to publish system battery SOC discovery to {disc_topic}: {e}", exc_info=True)
+        
+        log.info(f"Published HA discovery for system {system_id}")
+    
+    def publish_battery_array_entities(self, battery_array_id: str, battery_array_name: Optional[str] = None, pack_ids: Optional[List[str]] = None, system_id: Optional[str] = None) -> None:
+        """
+        Publish Home Assistant discovery entities for a battery array.
+        
+        Args:
+            battery_array_id: Battery array ID
+            battery_array_name: Optional battery array name
+            pack_ids: List of battery pack IDs in this array
+            system_id: Optional system ID (for via_device relationships)
+        """
+        device_id = f"battery_array_{_sanitize_key(battery_array_id)}"
+        device_name = battery_array_name or battery_array_id.replace("_", " ").title()
+        state_topic = self._battery_array_state_topic(battery_array_id)
+        
+        device_info = {
+            "identifiers": [f"battery_array:{battery_array_id}"],
+            "name": device_name,
+            "model": "Battery Array",
+            "manufacturer": "SolarHub",
+        }
+        
+        # Add via_device relationships if system is provided
+        if system_id:
+            device_info["via_device"] = f"system:{system_id}"
+        elif pack_ids:
+            # Fallback to first pack if no system
+            device_info["via_device"] = f"pack:{pack_ids[0]}"
+        
+        # Battery array-level sensors
+        sensors = [
+            ("total_soc_pct", "Total SOC", "%", "battery"),
+            ("total_voltage_v", "Total Voltage", "V", "voltage"),
+            ("total_current_a", "Total Current", "A", "current"),
+            ("total_power_w", "Total Power", "W", "power"),
+            ("avg_temperature_c", "Average Temperature", "°C", "temperature"),
+        ]
+        
+        for field_key, name, unit, device_class in sensors:
+            object_id = f"{device_id}_{field_key}"
+            cfg = {
+                "name": f"{device_name} {name}",
+                "unique_id": object_id,
+                "state_topic": state_topic,
+                "value_template": f"{{{{ value_json.{field_key} }}}}",
+                "device": device_info,
+                "unit_of_measurement": unit,
+                "device_class": device_class,
+                "state_class": "measurement",
+            }
+            disc_topic = self._disc_topic("sensor", object_id)
+            try:
+                self.mqtt.pub(disc_topic, cfg, retain=True)
+                log.debug(f"Published battery array sensor discovery: {disc_topic}")
+            except Exception as e:
+                log.error(f"Failed to publish battery array sensor discovery to {disc_topic}: {e}", exc_info=True)
+        
+        log.info(f"Published HA discovery for battery array {battery_array_id}")
     
     def publish_home_entities(self, home_id: str = "home", home_name: Optional[str] = None, array_ids: Optional[List[str]] = None) -> None:
         """
