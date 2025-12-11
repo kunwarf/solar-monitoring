@@ -279,6 +279,67 @@ class DataLogger:
         con.commit()
         con.close()
         log.info("Database initialization completed successfully")
+    def _get_inverter_system_id(self, cur, inverter_id: str) -> Optional[str]:
+        """Get system_id for an inverter from database."""
+        try:
+            cur.execute("SELECT system_id FROM inverters WHERE inverter_id = ?", (inverter_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+            # Fallback: try to get from array if inverter not in catalog
+            cur.execute("""
+                SELECT a.system_id FROM arrays a
+                JOIN inverters i ON i.array_id = a.array_id
+                WHERE i.inverter_id = ?
+            """, (inverter_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+            # Final fallback: default system
+            return 'system'
+        except sqlite3.OperationalError:
+            # Table might not exist yet
+            return 'system'
+    
+    def _get_battery_pack_info(self, cur, pack_id: str) -> tuple:
+        """Get system_id and battery_array_id for a battery pack from database."""
+        try:
+            cur.execute("SELECT system_id, battery_array_id FROM battery_packs WHERE pack_id = ?", (pack_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0], result[1]
+            # Fallback: default system
+            return 'system', None
+        except sqlite3.OperationalError:
+            # Table might not exist yet
+            return 'system', None
+    
+    def _get_meter_system_id(self, cur, meter_id: str) -> Optional[str]:
+        """Get system_id for a meter from database."""
+        try:
+            cur.execute("SELECT system_id FROM meters WHERE meter_id = ?", (meter_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+            # Fallback: default system
+            return 'system'
+        except sqlite3.OperationalError:
+            # Table might not exist yet
+            return 'system'
+    
+    def _get_array_system_id(self, cur, array_id: str) -> Optional[str]:
+        """Get system_id for an array from database."""
+        try:
+            cur.execute("SELECT system_id FROM arrays WHERE array_id = ?", (array_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+            # Fallback: default system
+            return 'system'
+        except sqlite3.OperationalError:
+            # Table might not exist yet
+            return 'system'
+    
     def insert_sample(self, inverter_id: str, tel: Telemetry):
         try:
             con = sqlite3.connect(self.path)
@@ -311,12 +372,15 @@ class DataLogger:
             # Get array_id from telemetry if available
             array_id = getattr(tel, 'array_id', None)
             
+            # Get system_id from database
+            system_id = self._get_inverter_system_id(cur, inverter_id)
+            
             cur.execute("""
                 INSERT INTO energy_samples 
-                (ts, inverter_id, array_id, pv_power_w, load_power_w, grid_power_w, 
+                (ts, inverter_id, array_id, system_id, pv_power_w, load_power_w, grid_power_w, 
                  batt_voltage_v, batt_current_a, soc, battery_soc, battery_voltage_v, battery_current_a, inverter_mode, inverter_temp_c)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts_configured, inverter_id, array_id, tel.pv_power_w, tel.load_power_w, tel.grid_power_w,
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (ts_configured, inverter_id, array_id, system_id, tel.pv_power_w, tel.load_power_w, tel.grid_power_w,
                   tel.batt_voltage_v, tel.batt_current_a, tel.batt_soc_pct,
                   tel.batt_soc_pct, tel.batt_voltage_v, tel.batt_current_a, inverter_mode, inverter_temp_c))
             con.commit()
@@ -342,13 +406,17 @@ class DataLogger:
             con = sqlite3.connect(self.path)
             cur = con.cursor()
             ts_configured = from_os_to_configured(datetime.fromisoformat(array_tel.ts))
+            
+            # Get system_id from database
+            system_id = self._get_array_system_id(cur, array_tel.array_id)
+            
             cur.execute("""
                 INSERT OR REPLACE INTO array_samples 
-                (ts, array_id, pv_power_w, load_power_w, grid_power_w, 
+                (ts, array_id, system_id, pv_power_w, load_power_w, grid_power_w, 
                  batt_power_w, batt_soc_pct, batt_voltage_v, batt_current_a)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (
-                ts_configured, array_tel.array_id,
+                ts_configured, array_tel.array_id, system_id,
                 array_tel.pv_power_w, array_tel.load_power_w, array_tel.grid_power_w,
                 array_tel.batt_power_w, array_tel.batt_soc_pct,
                 array_tel.batt_voltage_v, array_tel.batt_current_a
@@ -366,12 +434,16 @@ class DataLogger:
             con = sqlite3.connect(self.path)
             cur = con.cursor()
             ts_configured = from_os_to_configured(datetime.fromisoformat(ts_iso))
+            
+            # Get system_id and battery_array_id from database
+            system_id, battery_array_id = self._get_battery_pack_info(cur, bank_id)
+            
             cur.execute(
                 """
-                INSERT INTO battery_bank_samples(ts, bank_id, voltage, current, temperature, soc, batteries_count, cells_per_battery)
-                VALUES(?,?,?,?,?,?,?,?)
+                INSERT INTO battery_bank_samples(ts, bank_id, system_id, battery_array_id, voltage, current, temperature, soc, batteries_count, cells_per_battery)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
                 """,
-                (ts_configured, bank_id, voltage, current, temperature, soc, batteries_count, cells_per_battery),
+                (ts_configured, bank_id, system_id, battery_array_id, voltage, current, temperature, soc, batteries_count, cells_per_battery),
             )
             con.commit()
         except Exception as e:
@@ -538,16 +610,19 @@ class DataLogger:
             cur = con.cursor()
             ts_configured = from_os_to_configured(datetime.fromisoformat(tel.ts))
             
+            # Get system_id from database
+            system_id = self._get_meter_system_id(cur, meter_id)
+            
             cur.execute("""
                 INSERT INTO meter_samples 
-                (ts, meter_id, array_id, grid_power_w, grid_voltage_v, grid_current_a, grid_frequency_hz,
+                (ts, meter_id, array_id, system_id, grid_power_w, grid_voltage_v, grid_current_a, grid_frequency_hz,
                  grid_import_wh, grid_export_wh, energy_kwh, power_factor,
                  voltage_phase_a, voltage_phase_b, voltage_phase_c,
                  current_phase_a, current_phase_b, current_phase_c,
                  power_phase_a, power_phase_b, power_phase_c)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
-                ts_configured, meter_id, tel.array_id,
+                ts_configured, meter_id, tel.array_id, system_id,
                 tel.grid_power_w, tel.grid_voltage_v, tel.grid_current_a, tel.grid_frequency_hz,
                 tel.grid_import_wh, tel.grid_export_wh, tel.energy_kwh, tel.power_factor,
                 tel.voltage_phase_a, tel.voltage_phase_b, tel.voltage_phase_c,
@@ -558,6 +633,147 @@ class DataLogger:
             log.debug(f"Successfully inserted meter sample for {meter_id}")
         except Exception as e:
             log.error(f"Failed to insert meter sample for {meter_id}: {e}")
+            raise
+        finally:
+            con.close()
+    
+    def upsert_array_hourly_energy(self, array_id: str, system_id: str, date: str, hour_start: int,
+                                    solar_energy_kwh: Optional[float] = None,
+                                    load_energy_kwh: Optional[float] = None,
+                                    battery_charge_energy_kwh: Optional[float] = None,
+                                    battery_discharge_energy_kwh: Optional[float] = None,
+                                    grid_import_energy_kwh: Optional[float] = None,
+                                    grid_export_energy_kwh: Optional[float] = None,
+                                    avg_solar_power_w: Optional[float] = None,
+                                    avg_load_power_w: Optional[float] = None,
+                                    avg_battery_power_w: Optional[float] = None,
+                                    avg_grid_power_w: Optional[float] = None,
+                                    avg_soc_pct: Optional[float] = None,
+                                    sample_count: int = 0):
+        """Insert or update array hourly energy summary."""
+        try:
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("""
+                INSERT INTO array_hourly_energy 
+                (array_id, system_id, date, hour_start, solar_energy_kwh, load_energy_kwh,
+                 battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                 grid_import_energy_kwh, grid_export_energy_kwh,
+                 avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                 avg_soc_pct, sample_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(array_id, date, hour_start) DO UPDATE SET
+                    solar_energy_kwh = COALESCE(excluded.solar_energy_kwh, array_hourly_energy.solar_energy_kwh),
+                    load_energy_kwh = COALESCE(excluded.load_energy_kwh, array_hourly_energy.load_energy_kwh),
+                    battery_charge_energy_kwh = COALESCE(excluded.battery_charge_energy_kwh, array_hourly_energy.battery_charge_energy_kwh),
+                    battery_discharge_energy_kwh = COALESCE(excluded.battery_discharge_energy_kwh, array_hourly_energy.battery_discharge_energy_kwh),
+                    grid_import_energy_kwh = COALESCE(excluded.grid_import_energy_kwh, array_hourly_energy.grid_import_energy_kwh),
+                    grid_export_energy_kwh = COALESCE(excluded.grid_export_energy_kwh, array_hourly_energy.grid_export_energy_kwh),
+                    avg_solar_power_w = COALESCE(excluded.avg_solar_power_w, array_hourly_energy.avg_solar_power_w),
+                    avg_load_power_w = COALESCE(excluded.avg_load_power_w, array_hourly_energy.avg_load_power_w),
+                    avg_battery_power_w = COALESCE(excluded.avg_battery_power_w, array_hourly_energy.avg_battery_power_w),
+                    avg_grid_power_w = COALESCE(excluded.avg_grid_power_w, array_hourly_energy.avg_grid_power_w),
+                    avg_soc_pct = COALESCE(excluded.avg_soc_pct, array_hourly_energy.avg_soc_pct),
+                    sample_count = excluded.sample_count
+            """, (array_id, system_id, date, hour_start, solar_energy_kwh, load_energy_kwh,
+                  battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                  grid_import_energy_kwh, grid_export_energy_kwh,
+                  avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                  avg_soc_pct, sample_count))
+            con.commit()
+        except Exception as e:
+            log.error(f"Failed to upsert array hourly energy: {e}")
+            raise
+        finally:
+            con.close()
+    
+    def upsert_system_hourly_energy(self, system_id: str, date: str, hour_start: int,
+                                     solar_energy_kwh: Optional[float] = None,
+                                     load_energy_kwh: Optional[float] = None,
+                                     battery_charge_energy_kwh: Optional[float] = None,
+                                     battery_discharge_energy_kwh: Optional[float] = None,
+                                     grid_import_energy_kwh: Optional[float] = None,
+                                     grid_export_energy_kwh: Optional[float] = None,
+                                     avg_solar_power_w: Optional[float] = None,
+                                     avg_load_power_w: Optional[float] = None,
+                                     avg_battery_power_w: Optional[float] = None,
+                                     avg_grid_power_w: Optional[float] = None,
+                                     avg_soc_pct: Optional[float] = None,
+                                     sample_count: int = 0):
+        """Insert or update system hourly energy summary."""
+        try:
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("""
+                INSERT INTO system_hourly_energy 
+                (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh,
+                 battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                 grid_import_energy_kwh, grid_export_energy_kwh,
+                 avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                 avg_soc_pct, sample_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(system_id, date, hour_start) DO UPDATE SET
+                    solar_energy_kwh = COALESCE(excluded.solar_energy_kwh, system_hourly_energy.solar_energy_kwh),
+                    load_energy_kwh = COALESCE(excluded.load_energy_kwh, system_hourly_energy.load_energy_kwh),
+                    battery_charge_energy_kwh = COALESCE(excluded.battery_charge_energy_kwh, system_hourly_energy.battery_charge_energy_kwh),
+                    battery_discharge_energy_kwh = COALESCE(excluded.battery_discharge_energy_kwh, system_hourly_energy.battery_discharge_energy_kwh),
+                    grid_import_energy_kwh = COALESCE(excluded.grid_import_energy_kwh, system_hourly_energy.grid_import_energy_kwh),
+                    grid_export_energy_kwh = COALESCE(excluded.grid_export_energy_kwh, system_hourly_energy.grid_export_energy_kwh),
+                    avg_solar_power_w = COALESCE(excluded.avg_solar_power_w, system_hourly_energy.avg_solar_power_w),
+                    avg_load_power_w = COALESCE(excluded.avg_load_power_w, system_hourly_energy.avg_load_power_w),
+                    avg_battery_power_w = COALESCE(excluded.avg_battery_power_w, system_hourly_energy.avg_battery_power_w),
+                    avg_grid_power_w = COALESCE(excluded.avg_grid_power_w, system_hourly_energy.avg_grid_power_w),
+                    avg_soc_pct = COALESCE(excluded.avg_soc_pct, system_hourly_energy.avg_soc_pct),
+                    sample_count = excluded.sample_count
+            """, (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh,
+                  battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                  grid_import_energy_kwh, grid_export_energy_kwh,
+                  avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                  avg_soc_pct, sample_count))
+            con.commit()
+        except Exception as e:
+            log.error(f"Failed to upsert system hourly energy: {e}")
+            raise
+        finally:
+            con.close()
+    
+    def upsert_battery_bank_hourly(self, pack_id: str, battery_array_id: str, system_id: str,
+                                    date: str, hour_start: int,
+                                    charge_energy_kwh: Optional[float] = None,
+                                    discharge_energy_kwh: Optional[float] = None,
+                                    net_energy_kwh: Optional[float] = None,
+                                    avg_power_w: Optional[float] = None,
+                                    avg_soc_pct: Optional[float] = None,
+                                    avg_voltage_v: Optional[float] = None,
+                                    avg_current_a: Optional[float] = None,
+                                    avg_temperature_c: Optional[float] = None,
+                                    sample_count: int = 0):
+        """Insert or update battery bank hourly summary."""
+        try:
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("""
+                INSERT INTO battery_bank_hourly 
+                (pack_id, battery_array_id, system_id, date, hour_start,
+                 charge_energy_kwh, discharge_energy_kwh, net_energy_kwh,
+                 avg_power_w, avg_soc_pct, avg_voltage_v, avg_current_a, avg_temperature_c, sample_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(pack_id, date, hour_start) DO UPDATE SET
+                    charge_energy_kwh = COALESCE(excluded.charge_energy_kwh, battery_bank_hourly.charge_energy_kwh),
+                    discharge_energy_kwh = COALESCE(excluded.discharge_energy_kwh, battery_bank_hourly.discharge_energy_kwh),
+                    net_energy_kwh = COALESCE(excluded.net_energy_kwh, battery_bank_hourly.net_energy_kwh),
+                    avg_power_w = COALESCE(excluded.avg_power_w, battery_bank_hourly.avg_power_w),
+                    avg_soc_pct = COALESCE(excluded.avg_soc_pct, battery_bank_hourly.avg_soc_pct),
+                    avg_voltage_v = COALESCE(excluded.avg_voltage_v, battery_bank_hourly.avg_voltage_v),
+                    avg_current_a = COALESCE(excluded.avg_current_a, battery_bank_hourly.avg_current_a),
+                    avg_temperature_c = COALESCE(excluded.avg_temperature_c, battery_bank_hourly.avg_temperature_c),
+                    sample_count = excluded.sample_count
+            """, (pack_id, battery_array_id, system_id, date, hour_start,
+                  charge_energy_kwh, discharge_energy_kwh, net_energy_kwh,
+                  avg_power_w, avg_soc_pct, avg_voltage_v, avg_current_a, avg_temperature_c, sample_count))
+            con.commit()
+        except Exception as e:
+            log.error(f"Failed to upsert battery bank hourly: {e}")
             raise
         finally:
             con.close()
