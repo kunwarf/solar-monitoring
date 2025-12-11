@@ -43,6 +43,48 @@ class DataLogger:
             migrate_to_home_billing(self.path)
         except Exception as e:
             log.warning(f"Home billing migration may have already run or failed: {e}")
+        
+        # Run Phase 1: Hierarchy schema migration
+        try:
+            from solarhub.database_migrations import (
+                migrate_to_hierarchy_schema,
+                create_default_system,
+                backfill_system_ids,
+                migrate_config_yaml_to_database,
+                migrate_production_data
+            )
+            
+            # Step 1: Create all new tables and add foreign keys
+            migrate_to_hierarchy_schema(self.path)
+            
+            # Step 2: Create default system if none exists
+            create_default_system(self.path)
+            
+            # Step 3: Migrate config.yaml to database (if config.yaml exists and database is empty)
+            # Check if we have any systems in database
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("SELECT COUNT(*) FROM systems")
+            systems_count = cur.fetchone()[0]
+            con.close()
+            
+            if systems_count == 0:
+                # Database is empty, try to migrate from config.yaml
+                try:
+                    migrate_config_yaml_to_database(self.path)
+                except Exception as e:
+                    log.warning(f"Config.yaml migration failed (may not exist): {e}")
+            
+            # Step 4: Migrate production data
+            migrate_production_data(self.path)
+            
+            # Step 5: Backfill system_ids in all tables
+            backfill_system_ids(self.path)
+            
+            log.info("Phase 1: Hierarchy migration completed successfully")
+        except Exception as e:
+            log.error(f"Phase 1: Hierarchy migration failed: {e}", exc_info=True)
+            # Don't raise - allow system to continue with existing structure
     
     def _init(self):
         log.info(f"Initializing database at: {self.path}")
