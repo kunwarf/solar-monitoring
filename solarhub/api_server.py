@@ -681,34 +681,92 @@ def create_api(solar_app) -> FastAPI:
             return {"status": "error", "error": str(e)}
     
     @app.get("/api/arrays/{array_id}/now")
-    def api_array_now(array_id: str) -> Dict[str, Any]:
-        """Get consolidated 'now' telemetry for an array."""
+    def api_array_now(array_id: str, system_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get consolidated 'now' telemetry for an array with hierarchy structure."""
         try:
             from solarhub.array_aggregator import ArrayAggregator
             from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects
             
-            # Get array configuration
-            array_cfg = None
-            if solar_app and hasattr(solar_app, 'cfg') and solar_app.cfg.arrays:
-                array_cfg = next((a for a in solar_app.cfg.arrays if a.id == array_id), None)
+            # Use hierarchy if available
+            inv_array = None
+            target_system_id = system_id
+            inverter_ids = []
             
-            if not array_cfg:
-                return {"status": "error", "error": f"Array '{array_id}' not found"}
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                # Find array in hierarchy
+                for sys_id, system in solar_app.hierarchy_systems.items():
+                    if system_id and sys_id != system_id:
+                        continue
+                    for arr in system.inverter_arrays:
+                        if arr.array_id == array_id:
+                            inv_array = arr
+                            target_system_id = sys_id
+                            inverter_ids = arr.inverter_ids
+                            break
+                    if inv_array:
+                        break
+            
+            # Fallback to config
+            if not inv_array:
+                if solar_app and hasattr(solar_app, 'cfg') and solar_app.cfg.arrays:
+                    array_cfg = next((a for a in solar_app.cfg.arrays if a.id == array_id), None)
+                    if array_cfg:
+                        inverter_ids = array_cfg.inverter_ids
+                    else:
+                        return {"status": "error", "error": f"Array '{array_id}' not found"}
+                else:
+                    return {"status": "error", "error": f"Array '{array_id}' not found"}
             
             # Get inverter telemetry for this array
             inverter_telemetry = {}
-            for inv_id in array_cfg.inverter_ids:
+            for inv_id in inverter_ids:
                 tel_dict = solar_app.get_now(inv_id)
                 if tel_dict:
                     from solarhub.models import Telemetry
-                    # Reconstruct Telemetry object from dict
                     tel = Telemetry(**tel_dict)
                     inverter_telemetry[inv_id] = tel
             
-            # Get pack telemetry if available
+            # Get pack telemetry if available - use hierarchy if available
             pack_telemetry = {}
             pack_configs = {}
-            if solar_app.cfg.battery_packs and solar_app.cfg.attachments:
+            
+            if inv_array and inv_array.attached_battery_array_id:
+                # Use hierarchy battery array
+                for sys in solar_app.hierarchy_systems.values():
+                    for bat_array in sys.battery_arrays:
+                        if bat_array.battery_array_id == inv_array.attached_battery_array_id:
+                            for pack in bat_array.battery_packs:
+                                pack_id = pack.pack_id
+                                if pack.nominal_kwh:
+                                    pack_configs[pack_id] = {
+                                        "nominal_kwh": pack.nominal_kwh,
+                                        "max_charge_kw": pack.max_charge_kw or 0.0,
+                                        "max_discharge_kw": pack.max_discharge_kw or 0.0,
+                                    }
+                                
+                                # Get battery telemetry
+                                if hasattr(solar_app, 'battery_last') and solar_app.battery_last:
+                                    if isinstance(solar_app.battery_last, dict):
+                                        bank_tel = solar_app.battery_last.get(pack_id)
+                                    else:
+                                        bank_tel = solar_app.battery_last  # Legacy
+                                    
+                                    if bank_tel:
+                                        from solarhub.array_models import BatteryPackTelemetry
+                                        pack_tel = BatteryPackTelemetry(
+                                            pack_id=pack_id,
+                                            array_id=array_id,
+                                            ts=bank_tel.ts,
+                                            soc_pct=bank_tel.soc,
+                                            voltage_v=bank_tel.voltage,
+                                            current_a=bank_tel.current,
+                                            power_w=bank_tel.voltage * bank_tel.current if bank_tel.voltage and bank_tel.current else None,
+                                            temperature_c=bank_tel.temperature,
+                                        )
+                                        pack_telemetry[pack_id] = pack_tel
+                            break
+            elif solar_app.cfg.battery_packs and solar_app.cfg.attachments:
+                # Fallback to config-based approach
                 pack_objs = build_pack_runtime_objects(solar_app.cfg)
                 for att in solar_app.cfg.attachments:
                     if att.array_id == array_id and att.detached_at is None:
@@ -742,10 +800,16 @@ def create_api(solar_app) -> FastAPI:
                 array_id, inverter_telemetry, pack_telemetry, pack_configs
             )
             
+            array_dict = array_tel.model_dump()
+            array_dict["system_id"] = target_system_id
+            if inv_array:
+                array_dict["array_name"] = inv_array.name
+            
             return {
                 "status": "ok",
                 "array_id": array_id,
-                "now": array_tel.model_dump()
+                "system_id": target_system_id,
+                "now": array_dict
             }
         except Exception as e:
             log.error(f"Error in /api/arrays/{array_id}/now: {e}", exc_info=True)
