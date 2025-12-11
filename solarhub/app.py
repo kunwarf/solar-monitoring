@@ -843,25 +843,57 @@ class SolarApp:
         if ha_discovery_enabled:
             log.info("Publishing HA discovery for arrays, battery packs, and battery bank")
             
-            # Publish HA discovery for arrays
+            # Publish HA discovery for arrays (with hierarchy support)
             for array_id, array_obj in self.arrays.items():
                 array_cfg = next((a for a in (self.cfg.arrays or []) if a.id == array_id), None)
                 array_name = (array_cfg.name if array_cfg else None) or array_obj.name
+                
+                # Get system_id from hierarchy if available
+                system_id = None
+                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                    for sys_id, system in self.hierarchy_systems.items():
+                        for inv_array in system.inverter_arrays:
+                            if inv_array.id == array_id:
+                                system_id = sys_id
+                                break
+                        if system_id:
+                            break
+                
                 self.ha.publish_array_entities(
                     array_id=array_id,
                     array_name=array_name,
                     inverter_ids=array_obj.inverter_ids,
-                    pack_ids=array_obj.attached_pack_ids
+                    pack_ids=array_obj.attached_pack_ids,
+                    system_id=system_id
                 )
             
-            # Publish HA discovery for battery packs
+            # Publish HA discovery for battery packs (with hierarchy support)
             for pack_id, pack_obj in self.packs.items():
                 pack_cfg = next((p for p in (self.cfg.battery_packs or []) if p.id == pack_id), None)
                 pack_name = (pack_cfg.name if pack_cfg else None) or pack_obj.name
+                
+                # Get battery_array_id and system_id from hierarchy if available
+                battery_array_id = None
+                system_id = None
+                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                    for sys_id, system in self.hierarchy_systems.items():
+                        for bat_array in system.battery_arrays:
+                            for pack in bat_array.battery_packs:
+                                if pack.pack_id == pack_id:
+                                    battery_array_id = bat_array.id
+                                    system_id = sys_id
+                                    break
+                            if battery_array_id:
+                                break
+                        if battery_array_id:
+                            break
+                
                 self.ha.publish_pack_entities(
                     pack_id=pack_id,
                     pack_name=pack_name,
-                    array_id=pack_obj.attached_array_id
+                    array_id=pack_obj.attached_array_id,  # Legacy inverter array
+                    battery_array_id=battery_array_id,
+                    system_id=system_id
                 )
             
             # Publish HA discovery for all battery banks
