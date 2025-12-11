@@ -16,6 +16,7 @@ from solarhub.hierarchy.devices import Inverter, BatteryPack, Meter
 from solarhub.hierarchy.batteries import Battery, BatteryCell
 from solarhub.hierarchy.adapters import AdapterBase, AdapterInstance
 from solarhub.hierarchy.telemetry import TelemetryManager
+from solarhub.hierarchy.loader import HierarchyLoader
 
 __all__ = [
     'BaseDevice',
@@ -31,5 +32,6 @@ __all__ = [
     'AdapterBase',
     'AdapterInstance',
     'TelemetryManager',
+    'HierarchyLoader',
 ]
 
