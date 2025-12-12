@@ -69,20 +69,19 @@ class DataLogger:
             # Step 2: Create default system if none exists
             create_default_system(self.path)
             
-            # Step 3: Migrate config.yaml to database (if config.yaml exists and database is empty)
-            # Check if we have any systems in database
+            # Step 3: Migrate config.yaml to database (always try, it's idempotent)
+            # Check if adapter_base is empty (indicates config migration hasn't run)
             con = sqlite3.connect(self.path)
             cur = con.cursor()
-            cur.execute("SELECT COUNT(*) FROM systems")
-            systems_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM adapter_base")
+            adapter_base_count = cur.fetchone()[0]
             con.close()
             
-            if systems_count == 0:
-                # Database is empty, try to migrate from config.yaml
-                try:
-                    migrate_config_yaml_to_database(self.path)
-                except Exception as e:
-                    log.warning(f"Config.yaml migration failed (may not exist): {e}")
+            # Always try to migrate config.yaml (it's idempotent and will update existing data)
+            try:
+                migrate_config_yaml_to_database(self.path)
+            except Exception as e:
+                log.warning(f"Config.yaml migration failed (may not exist or may have errors): {e}")
             
             # Step 4: Migrate production data
             migrate_production_data(self.path)

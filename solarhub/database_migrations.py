@@ -509,6 +509,9 @@ def migrate_to_hierarchy_schema(db_path: str) -> None:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
     
+    # Enable foreign key constraints
+    cur.execute("PRAGMA foreign_keys = ON")
+    
     try:
         log.info("Starting Phase 1: Hierarchy schema migration")
         
@@ -1290,6 +1293,9 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
     
     con = sqlite3.connect(db_path)
     cur = con.cursor()
+    
+    # Enable foreign key constraints
+    cur.execute("PRAGMA foreign_keys = ON")
     
     try:
         log.info(f"Starting config.yaml to database migration from {config_path}")
