@@ -78,6 +78,25 @@ class SolarApp:
         self.ha = HADiscoveryPublisher(self.mqtt, cfg.mqtt.base_topic, db_path=self.logger.path)
         self.array_last: Dict[str, Any] = {}  # Store array telemetry for home aggregation
         
+        # Track polling loop task for background execution
+        self._polling_loop_task: Optional[asyncio.Task] = None
+        # Suspend/resume control for polling loop
+        self._polling_suspended: bool = False
+        # Track device connection state for auto-reconnection
+        self._devices_connected: bool = False
+        # Prevent multiple simultaneous reconnection attempts
+        self._reconnecting: bool = False
+        # Disconnect/reconnect signaling - these are set by API server, handled by polling loop
+        # Using simple boolean flags with lock for thread-safety (events are loop-bound, flags work across loops)
+        self._disconnect_requested: bool = False
+        self._reconnect_requested: bool = False
+        self._reconnect_config: Optional[Dict[str, Any]] = None
+        self._connection_lock: Optional[asyncio.Lock] = None
+        # Billing scheduler task
+        self._billing_scheduler_task: Optional[asyncio.Task] = None
+        # Energy calculator hourly task
+        self._energy_calculator_task: Optional[asyncio.Task] = None
+        
         # Array support
         from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
         self._build_runtime_objects(cfg)
@@ -241,26 +260,9 @@ class SolarApp:
             adapter=adapter_config
         )
         return meter_config
-        
-        # Track polling loop task for background execution
-        self._polling_loop_task: Optional[asyncio.Task] = None
-        # Suspend/resume control for polling loop
-        self._polling_suspended: bool = False
-        # Track device connection state for auto-reconnection
-        self._devices_connected: bool = False
-        # Prevent multiple simultaneous reconnection attempts
-        self._reconnecting: bool = False
-        # Disconnect/reconnect signaling - these are set by API server, handled by polling loop
-        # Using simple boolean flags with lock for thread-safety (events are loop-bound, flags work across loops)
-        self._disconnect_requested: bool = False
-        self._reconnect_requested: bool = False
-        self._reconnect_config: Optional[Dict[str, Any]] = None
-        self._connection_lock: Optional[asyncio.Lock] = None
-        # Billing scheduler task
-        self._billing_scheduler_task: Optional[asyncio.Task] = None
-        # Energy calculator hourly task
-        self._energy_calculator_task: Optional[asyncio.Task] = None
-        
+    
+    def _initialize_discovery_attributes(self):
+        """Initialize device discovery and recovery attributes."""
         # Device discovery and recovery
         self.device_registry = None
         self.discovery_service = None
