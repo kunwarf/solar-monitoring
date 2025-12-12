@@ -98,7 +98,6 @@ class SolarApp:
         self._energy_calculator_task: Optional[asyncio.Task] = None
         
         # Array support
-        from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
         self._build_runtime_objects(cfg)
         from solarhub.array_aggregator import ArrayAggregator
         from solarhub.system_aggregator import SystemAggregator
@@ -143,12 +142,6 @@ class SolarApp:
             
             # Build runtime objects from hierarchy
             self._build_runtime_from_hierarchy()
-            
-            # Also build legacy arrays/packs for backward compatibility
-            from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
-            self.arrays = build_array_runtime_objects(cfg) if cfg.arrays else {}
-            self.packs = build_pack_runtime_objects(cfg) if cfg.battery_packs else {}
-            self.battery_bank_arrays = build_battery_bank_array_runtime_objects(cfg) if cfg.battery_bank_arrays else {}
             
         except Exception as e:
             log.error(f"Failed to load hierarchy from database: {e}", exc_info=True)
@@ -857,126 +850,67 @@ class SolarApp:
         
         # Publish HA discovery for arrays, packs, and battery bank (regardless of smart policy)
         # Check if HA discovery is enabled
-        ha_discovery_enabled = getattr(self.cfg.mqtt, 'ha_discovery', True)  # Default to True for backward compatibility
+        ha_discovery_enabled = getattr(self.cfg.mqtt, 'ha_discovery', True)  # Default to True
         if ha_discovery_enabled:
             log.info("Publishing HA discovery for arrays, battery packs, and battery bank")
             
-            # Publish HA discovery for arrays (with hierarchy support)
-            for array_id, array_obj in self.arrays.items():
-                array_cfg = next((a for a in (self.cfg.arrays or []) if a.id == array_id), None)
-                array_name = (array_cfg.name if array_cfg else None) or array_obj.name
-                
-                # Get system_id from hierarchy if available
-                system_id = None
-                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
-                    for sys_id, system in self.hierarchy_systems.items():
-                        for inv_array in system.inverter_arrays:
-                            if inv_array.id == array_id:
-                                system_id = sys_id
-                                break
-                        if system_id:
-                            break
-                
-                self.ha.publish_array_entities(
-                    array_id=array_id,
-                    array_name=array_name,
-                    inverter_ids=array_obj.inverter_ids,
-                    pack_ids=array_obj.attached_pack_ids,
-                    system_id=system_id
-                )
-            
-            # Publish HA discovery for battery packs (with hierarchy support)
-            for pack_id, pack_obj in self.packs.items():
-                pack_cfg = next((p for p in (self.cfg.battery_packs or []) if p.id == pack_id), None)
-                pack_name = (pack_cfg.name if pack_cfg else None) or pack_obj.name
-                
-                # Get battery_array_id and system_id from hierarchy if available
-                battery_array_id = None
-                system_id = None
-                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
-                    for sys_id, system in self.hierarchy_systems.items():
-                        for bat_array in system.battery_arrays:
-                            for pack in bat_array.battery_packs:
-                                if pack.pack_id == pack_id:
-                                    battery_array_id = bat_array.id
-                                    system_id = sys_id
-                                    break
-                            if battery_array_id:
-                                break
-                        if battery_array_id:
-                            break
-                
-                self.ha.publish_pack_entities(
-                    pack_id=pack_id,
-                    pack_name=pack_name,
-                    array_id=pack_obj.attached_array_id,  # Legacy inverter array
-                    battery_array_id=battery_array_id,
-                    system_id=system_id
-                )
-            
-            # Publish HA discovery for all battery banks
-            # First, handle legacy battery_bank (for backward compatibility)
-            if getattr(self.cfg, "battery_bank", None) and self.battery_adapter:
-                bank = self.cfg.battery_bank
-                bank_id = getattr(bank, "id", None) or "battery_bank"
-                bank_name = getattr(bank, "name", None)
-                pack_ids = list(self.packs.keys()) if self.packs else None
-                log.info(f"Publishing battery bank discovery (legacy): bank_id={bank_id}, bank_name={bank_name}, pack_ids={pack_ids}")
-                try:
-                    self.ha.publish_battery_bank_entities(
-                        bank_id=bank_id,
-                        bank_name=bank_name,
-                        pack_ids=pack_ids,
-                        bank_cfg=bank
-                    )
-                    log.info(f"HA discovery published for battery bank {bank_id} (state topic: {self.cfg.mqtt.base_topic}/battery/{bank_id}/regs)")
-                except Exception as e:
-                    log.error(f"Failed to publish battery bank discovery: {e}", exc_info=True)
-                
-                # Publish discovery for individual battery units if we have telemetry
-                battery_last_legacy = self.battery_last if not isinstance(self.battery_last, dict) else None
-                if battery_last_legacy and hasattr(battery_last_legacy, 'devices'):
-                    for battery_unit in battery_last_legacy.devices:
-                        if hasattr(battery_unit, 'power'):
-                            try:
-                                self.ha.publish_battery_unit_entities(
-                                    bank_id=bank_id,
-                                    unit_power=battery_unit.power,
-                                    bank_name=bank_name
-                                )
-                            except Exception as e:
-                                log.error(f"Failed to publish discovery for battery unit {battery_unit.power}: {e}", exc_info=True)
-            
-            # Publish HA discovery for all battery banks from battery_banks list
-            if getattr(self.cfg, "battery_banks", None):
-                for bank in self.cfg.battery_banks:
-                    bank_id = getattr(bank, "id", None) or "battery_bank"
-                    bank_name = getattr(bank, "name", None)
-                    pack_ids = list(self.packs.keys()) if self.packs else None
-                    log.info(f"Publishing battery bank discovery: bank_id={bank_id}, bank_name={bank_name}, pack_ids={pack_ids}")
-                    try:
-                        self.ha.publish_battery_bank_entities(
-                            bank_id=bank_id,
-                            bank_name=bank_name,
-                            pack_ids=pack_ids,
-                            bank_cfg=bank
+            # Publish HA discovery for arrays from hierarchy
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                for system_id, system in self.hierarchy_systems.items():
+                    for inv_array in system.inverter_arrays:
+                        self.ha.publish_array_entities(
+                            array_id=inv_array.array_id,
+                            array_name=inv_array.name,
+                            inverter_ids=inv_array.inverter_ids,
+                            pack_ids=inv_array.attached_pack_ids,
+                            system_id=system_id
                         )
-                        log.info(f"HA discovery published for battery bank {bank_id} (state topic: {self.cfg.mqtt.base_topic}/battery/{bank_id}/regs)")
-                    except Exception as e:
-                        log.error(f"Failed to publish battery bank discovery for {bank_id}: {e}", exc_info=True)
-                    
-                    # Publish discovery for individual battery units if we have telemetry
-                    if bank_id in self.battery_last and hasattr(self.battery_last[bank_id], 'devices'):
-                        for battery_unit in self.battery_last[bank_id].devices:
-                            if hasattr(battery_unit, 'power'):
-                                try:
-                                    self.ha.publish_battery_unit_entities(
-                                        bank_id=bank_id,
-                                        unit_power=battery_unit.power,
-                                        bank_name=bank_name
-                                    )
-                                except Exception as e:
-                                    log.error(f"Failed to publish discovery for battery unit {battery_unit.power}: {e}", exc_info=True)
+            
+            # Publish HA discovery for battery packs from hierarchy
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                for system_id, system in self.hierarchy_systems.items():
+                    for bat_array in system.battery_arrays:
+                        for pack in bat_array.battery_packs:
+                            pack_id = pack.pack_id
+                            pack_name = pack.name
+                            battery_array_id = bat_array.battery_array_id
+                            # Find attached inverter array
+                            attached_inv_array_id = bat_array.attached_inverter_array_id
+                            
+                            self.ha.publish_pack_entities(
+                                pack_id=pack_id,
+                                pack_name=pack_name,
+                                array_id=attached_inv_array_id,
+                                battery_array_id=battery_array_id,
+                                system_id=system_id
+                            )
+                            
+                            # Publish battery bank discovery for this pack
+                            pack_ids = [p.pack_id for p in bat_array.battery_packs]
+                            log.info(f"Publishing battery bank discovery: pack_id={pack_id}, pack_name={pack_name}, pack_ids={pack_ids}")
+                            try:
+                                self.ha.publish_battery_bank_entities(
+                                    bank_id=pack_id,
+                                    bank_name=pack_name,
+                                    pack_ids=pack_ids,
+                                    bank_cfg=None  # No config needed for hierarchy-based packs
+                                )
+                                log.info(f"HA discovery published for battery bank {pack_id} (state topic: {self.cfg.mqtt.base_topic}/battery/{pack_id}/regs)")
+                            except Exception as e:
+                                log.error(f"Failed to publish battery bank discovery for {pack_id}: {e}", exc_info=True)
+                            
+                            # Publish discovery for individual battery units if we have telemetry
+                            if pack_id in self.battery_last and hasattr(self.battery_last[pack_id], 'devices'):
+                                for battery_unit in self.battery_last[pack_id].devices:
+                                    if hasattr(battery_unit, 'power'):
+                                        try:
+                                            self.ha.publish_battery_unit_entities(
+                                                bank_id=pack_id,
+                                                unit_power=battery_unit.power,
+                                                bank_name=pack_name
+                                            )
+                                        except Exception as e:
+                                            log.error(f"Failed to publish discovery for battery unit {battery_unit.power}: {e}", exc_info=True)
             
             # Publish HA discovery for systems and battery arrays from hierarchy
             if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
@@ -1027,43 +961,40 @@ class SolarApp:
         
         log.info(f"Smart policy configuration: enabled={self.cfg.smart.policy.enabled}")
         if self.cfg.smart.policy.enabled:
-            # Initialize per-array schedulers
-            if self.arrays:
-                log.info(f"Initializing per-array schedulers for {len(self.arrays)} arrays")
-                for array_id, array_obj in self.arrays.items():
-                    # Check if array has scheduler enabled (array config or global)
-                    array_cfg = next((a for a in (self.cfg.arrays or []) if a.id == array_id), None)
-                    array_scheduler_enabled = True
-                    if array_cfg and array_cfg.scheduler and array_cfg.scheduler.enabled is not None:
-                        array_scheduler_enabled = array_cfg.scheduler.enabled
-                    elif not self.cfg.smart.policy.enabled:
-                        array_scheduler_enabled = False
-                    
-                    if array_scheduler_enabled:
-                        try:
-                            scheduler = SmartScheduler(self.logger, self, array_id=array_id)
-                            self.smart_schedulers[array_id] = scheduler
-                            log.info(f"Initialized scheduler for array {array_id}")
-                        except Exception as e:
-                            log.error(f"Failed to initialize scheduler for array {array_id}: {e}")
-                    else:
-                        log.info(f"Scheduler disabled for array {array_id}")
+            # Initialize per-array schedulers from hierarchy
+            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                total_arrays = sum(len(system.inverter_arrays) for system in self.hierarchy_systems.values())
+                log.info(f"Initializing per-array schedulers for {total_arrays} arrays")
+                for system_id, system in self.hierarchy_systems.items():
+                    for inv_array in system.inverter_arrays:
+                        array_id = inv_array.array_id
+                        # Check if array has scheduler enabled (from config or global)
+                        array_cfg = next((a for a in (self.cfg.arrays or []) if a.id == array_id), None)
+                        array_scheduler_enabled = True
+                        if array_cfg and array_cfg.scheduler and array_cfg.scheduler.enabled is not None:
+                            array_scheduler_enabled = array_cfg.scheduler.enabled
+                        elif not self.cfg.smart.policy.enabled:
+                            array_scheduler_enabled = False
+                        
+                        if array_scheduler_enabled:
+                            try:
+                                scheduler = SmartScheduler(self.logger, self, array_id=array_id)
+                                self.smart_schedulers[array_id] = scheduler
+                                log.info(f"Initialized scheduler for array {array_id}")
+                            except Exception as e:
+                                log.error(f"Failed to initialize scheduler for array {array_id}: {e}")
+                        else:
+                            log.info(f"Scheduler disabled for array {array_id}")
                 
-                # Legacy: create single scheduler for backward compatibility if only one array
+                # Create single scheduler for convenience if only one array
                 if len(self.smart_schedulers) == 1:
                     self.smart = next(iter(self.smart_schedulers.values()))
-                    log.info("Using single scheduler from array (legacy compatibility)")
+                    log.info("Using single scheduler from array")
                 elif not self.smart_schedulers:
                     log.warning("No schedulers initialized for any arrays")
             else:
-                # No arrays defined, use legacy single scheduler
-                try:
-                    self.smart = SmartScheduler(self.logger, self, array_id=None)
-                    log.info("Smart policy enabled - using enhanced smart scheduler with configuration manager (legacy mode)")
-                except Exception as e:
-                    log.error(f"Failed to initialize smart scheduler: {e}")
-                    log.error("Smart scheduler will not be available - inverter config commands will not be processed")
-                    self.smart = None
+                log.error("No hierarchy systems available - cannot initialize schedulers")
+                self.smart = None
             
             # Subscribe to battery optimization configuration commands (use first scheduler for legacy compatibility)
             active_scheduler = self.smart or (next(iter(self.smart_schedulers.values())) if self.smart_schedulers else None)
@@ -2046,33 +1977,6 @@ class SolarApp:
                         log.info(f"System energy calculation and storage completed for {system_id}")
                 except Exception as e:
                     log.error(f"Failed to calculate energy for system {system_id}: {e}", exc_info=True)
-        elif self.arrays:
-            # Fallback to config arrays
-            for array_id, array_obj in self.arrays.items():
-                try:
-                    log.info(f"Processing energy calculation for array: {array_id}")
-                    
-                    # Get system_id from hierarchy if available, otherwise use default
-                    system_id = "system"  # Default
-                    if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
-                        # Try to find system_id from hierarchy
-                        for sys_id, sys in self.hierarchy_systems.items():
-                            for inv_array in sys.inverter_arrays:
-                                if inv_array.id == array_id:
-                                    system_id = sys_id
-                                    break
-                            if system_id != "system":
-                                break
-                    
-                    # Calculate and store array hourly energy
-                    energy_calc.calculate_and_store_array_hourly_energy(
-                        array_id=array_id,
-                        system_id=system_id,
-                        inverter_ids=array_obj.inverter_ids,
-                        hour_start=hour_start
-                    )
-                    
-                    log.info(f"Array energy calculation completed for {array_id}")
                     
                 except Exception as e:
                     log.error(f"Failed to calculate energy for array {array_id}: {e}", exc_info=True)
@@ -2375,42 +2279,25 @@ class SolarApp:
             log.debug(f"Storing telemetry for {rt.cfg.id} in database")
             self.logger.insert_sample(rt.cfg.id, tel)
             
-            # Aggregate and store array telemetry
-            # Use hierarchy arrays if available, otherwise fallback to config arrays
+            # Aggregate and store array telemetry from hierarchy
             array = None
             array_inverter_ids = []
             attached_battery_array_id = None
             
-            if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
-                # Find array in hierarchy
-                for system in self.hierarchy_systems.values():
-                    for inv_array in system.inverter_arrays:
-                        if inv_array.array_id == tel.array_id:
-                            array_inverter_ids = inv_array.inverter_ids
-                            attached_battery_array_id = inv_array.attached_battery_array_id
-                            array = inv_array
-                            break
-                    if array:
-                        break
+            if not hasattr(self, 'hierarchy_systems') or not self.hierarchy_systems:
+                log.warning(f"No hierarchy systems available, skipping array aggregation for {rt.cfg.id}")
+                return
             
-            # Fallback to config arrays
-            if not array and tel.array_id and tel.array_id in self.arrays:
-                array = self.arrays[tel.array_id]
-                array_inverter_ids = array.inverter_ids if hasattr(array, 'inverter_ids') else []
-                # For config-based arrays, attached_pack_ids is a list, not an array_id
-                # We need to find the battery array that's attached to this inverter array
-                attached_battery_array_id = None
-                if hasattr(array, 'attached_pack_ids') and array.attached_pack_ids:
-                    # Find battery array that contains these packs
-                    if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
-                        for system in self.hierarchy_systems.values():
-                            for bat_array in system.battery_arrays:
-                                pack_ids = [pack.pack_id for pack in bat_array.battery_packs]
-                                if any(pid in pack_ids for pid in array.attached_pack_ids):
-                                    attached_battery_array_id = bat_array.battery_array_id
-                                    break
-                            if attached_battery_array_id:
-                                break
+            # Find array in hierarchy
+            for system in self.hierarchy_systems.values():
+                for inv_array in system.inverter_arrays:
+                    if inv_array.array_id == tel.array_id:
+                        array_inverter_ids = inv_array.inverter_ids
+                        attached_battery_array_id = inv_array.attached_battery_array_id
+                        array = inv_array
+                        break
+                if array:
+                    break
             
             if array and array_inverter_ids:
                 # Collect telemetry for all inverters in this array
@@ -2484,7 +2371,18 @@ class SolarApp:
                                 else:
                                     battery_telemetry = self.battery_last  # Legacy: single object
                                 
-                                if battery_telemetry and pack_id in [p.id for p in self.packs.values()]:
+                                # Check if pack_id exists in hierarchy
+                                pack_exists = False
+                                if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                                    for system in self.hierarchy_systems.values():
+                                        for bat_array in system.battery_arrays:
+                                            if any(p.pack_id == pack_id for p in bat_array.battery_packs):
+                                                pack_exists = True
+                                                break
+                                        if pack_exists:
+                                            break
+                                
+                                if battery_telemetry and pack_exists:
                                     from solarhub.array_models import BatteryPackTelemetry
                                     pack_tel = BatteryPackTelemetry(
                                         pack_id=pack_id,
