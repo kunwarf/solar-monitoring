@@ -1936,7 +1936,7 @@ class SolarApp:
         # Process arrays (aggregate from member inverters and store in array_hourly_energy)
         energy_calc = EnergyCalculator(self.logger.path)
         
-        # Use hierarchy if available, otherwise fallback to config arrays
+        # Use hierarchy systems
         if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
             # Process arrays from hierarchy
             for system_id, system in self.hierarchy_systems.items():
