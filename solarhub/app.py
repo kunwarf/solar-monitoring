@@ -2735,25 +2735,52 @@ class SolarApp:
                     is_connected = current.client.is_connected
             # Check for raw_conn/conn (jkbms_tcpip uses socket, not modbus client)
             elif hasattr(current, 'raw_conn') and current.raw_conn:
-                # jkbms_tcpip uses socket connection
-                try:
-                    # Check if socket is still connected
-                    if hasattr(current.raw_conn, 'getpeername'):
-                        # TCP socket - check if we can get peer name (indicates connection)
-                        current.raw_conn.getpeername()
-                        is_connected = True
-                    else:
-                        # Serial port - check if it's open
-                        is_connected = current.raw_conn.is_open if hasattr(current.raw_conn, 'is_open') else False
-                except (OSError, AttributeError):
-                    is_connected = False
-            # For failover adapters, also try check_connectivity method
+                # jkbms_tcpip uses socket connection - use check_connectivity if available
+                # This properly checks both socket AND listening loop status
+                if hasattr(current, 'check_connectivity'):
+                    try:
+                        is_connected = await current.check_connectivity()
+                    except Exception as e:
+                        log.debug(f"check_connectivity() failed for {bank_id}: {e}")
+                        is_connected = False
+                else:
+                    # Fallback to socket check only (for other adapters using raw_conn)
+                    try:
+                        if hasattr(current.raw_conn, 'getpeername'):
+                            # TCP socket - check if we can get peer name (indicates connection)
+                            current.raw_conn.getpeername()
+                            is_connected = True
+                        else:
+                            # Serial port - check if it's open
+                            is_connected = current.raw_conn.is_open if hasattr(current.raw_conn, 'is_open') else False
+                    except (OSError, AttributeError):
+                        is_connected = False
+            # For failover adapters, also try check_connectivity method (if not already checked)
             if not is_connected and hasattr(adapter, 'check_connectivity'):
                 try:
                     is_connected = await adapter.check_connectivity()
-                except Exception:
+                except Exception as e:
+                    log.debug(f"Failover adapter check_connectivity() failed for {bank_id}: {e}")
                     is_connected = False
         # For direct adapters (non-failover)
+        elif hasattr(adapter, 'raw_conn') and adapter.raw_conn:
+            # jkbms_tcpip direct adapter - use check_connectivity if available
+            if hasattr(adapter, 'check_connectivity'):
+                try:
+                    is_connected = await adapter.check_connectivity()
+                except Exception as e:
+                    log.debug(f"check_connectivity() failed for direct adapter {bank_id}: {e}")
+                    is_connected = False
+            else:
+                # Fallback to socket check
+                try:
+                    if hasattr(adapter.raw_conn, 'getpeername'):
+                        adapter.raw_conn.getpeername()
+                        is_connected = True
+                    else:
+                        is_connected = adapter.raw_conn.is_open if hasattr(adapter.raw_conn, 'is_open') else False
+                except (OSError, AttributeError):
+                    is_connected = False
         elif hasattr(adapter, 'client') and adapter.client:
             # Serial adapters (pytes, jkbms_passive) use is_open
             if hasattr(adapter.client, 'is_open'):
@@ -2773,14 +2800,33 @@ class SolarApp:
         
         if not is_connected:
             log.warning(f"Battery adapter for {bank_id or 'legacy'} not connected, attempting reconnection...")
-            try:
-                await adapter.connect()
-                log.info(f"Successfully reconnected battery adapter for {bank_id or 'legacy'}")
-            except Exception as e:
-                log.warning(f"Failed to reconnect battery adapter for {bank_id or 'legacy'}: {e}")
-                # Mark as disconnected for reconnection attempt
-                self._devices_connected = False
-                return
+            
+            # For failover adapters, try failover first before reconnecting primary
+            if hasattr(adapter, 'current_adapter') and hasattr(adapter, '_try_failover'):
+                # This is a failover adapter - try failover first
+                try:
+                    if await adapter._try_failover():
+                        log.info(f"Failover successful for {bank_id or 'legacy'}")
+                        is_connected = True
+                    else:
+                        # All adapters failed, try reconnecting primary
+                        log.info(f"All adapters failed for {bank_id or 'legacy'}, reconnecting primary...")
+                        await adapter.connect()
+                        log.info(f"Successfully reconnected primary adapter for {bank_id or 'legacy'}")
+                except Exception as e:
+                    log.warning(f"Failed to reconnect/failover battery adapter for {bank_id or 'legacy'}: {e}")
+                    self._devices_connected = False
+                    return
+            else:
+                # Single adapter - just reconnect
+                try:
+                    await adapter.connect()
+                    log.info(f"Successfully reconnected battery adapter for {bank_id or 'legacy'}")
+                except Exception as e:
+                    log.warning(f"Failed to reconnect battery adapter for {bank_id or 'legacy'}: {e}")
+                    # Mark as disconnected for reconnection attempt
+                    self._devices_connected = False
+                    return
         
         try:
             tel = await adapter.poll()  # type: ignore[attr-defined]

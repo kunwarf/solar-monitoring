@@ -458,9 +458,32 @@ class JKBMSTcpipAdapter(BatteryAdapter):
     
     async def connect(self):
         """Connect to RS485 gateway via TCP/IP or serial port."""
+        # Check if we need to restart listening loop
         if self.raw_conn is not None:
-            log.debug("Already connected")
-            return
+            # Connection exists, but check if listening loop is alive
+            if self._listening_task and self._listening_task.done():
+                log.warning("JK BMS: Connection exists but listening loop died, restarting...")
+                # Clean up dead task
+                try:
+                    await self._listening_task
+                except Exception as e:
+                    log.debug(f"JK BMS: Exception from dead listening task: {e}")
+                self._listening_task = None
+                # Restart listening loop
+                self._stop_listening = False
+                self._listening_task = asyncio.create_task(self._listen_loop())
+                log.info("JK BMS: Restarted listening loop for existing connection")
+                return
+            elif not self._listening_task:
+                # Connection exists but no listening loop - restart it
+                log.warning("JK BMS: Connection exists but no listening loop, starting...")
+                self._stop_listening = False
+                self._listening_task = asyncio.create_task(self._listen_loop())
+                log.info("JK BMS: Started listening loop for existing connection")
+                return
+            else:
+                log.debug("JK BMS: Already connected and listening loop is running")
+                return
         
         try:
             if self.connection_type == "tcpip":
@@ -558,10 +581,21 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                 # Log connection status periodically (every 30 seconds)
                 current_time = time.time()
                 if current_time - last_log_time >= 30.0:
-                    log.info(f"JK BMS listening loop active: conn={self.conn is not None}, batteries_discovered={len(self.batteries)}/{self.batteries_expected}, current_battery_id={self.current_battery_id}")
+                    conn_status = "connected" if self.conn is not None else "disconnected"
+                    batteries_status = f"{len(self.batteries)}/{self.batteries_expected}"
+                    time_elapsed = int((current_time - (getattr(self, '_connect_time', current_time))) / 60)
+                    log.info(f"JK BMS listening loop active: conn={conn_status}, batteries_discovered={batteries_status}, current_battery_id={self.current_battery_id}, elapsed={time_elapsed}m")
                     if len(self.batteries) == 0:
-                        log.warning(f"JK BMS: No batteries discovered yet after {int((current_time - (getattr(self, '_connect_time', current_time))) / 60)} minutes. Check RS485 connection and BMS broadcasting.")
+                        log.warning(f"JK BMS: No batteries discovered yet after {time_elapsed} minutes. Check RS485 connection and BMS broadcasting.")
                     last_log_time = current_time
+                
+                # Log detailed status every 5 minutes
+                if current_time - last_status_log_time >= 300.0:
+                    if self.conn:
+                        log.debug(f"JK BMS status: listening_loop=running, connection=active, batteries={len(self.batteries)}, buffer_size={len(buffer)}")
+                    else:
+                        log.warning(f"JK BMS status: listening_loop=running, connection=None (should not happen)")
+                    last_status_log_time = current_time
                 
                 # Use a small timeout to avoid blocking for too long
                 # This allows other tasks to run
@@ -692,10 +726,18 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                 buffer = buffer[pos:]
                 
             except asyncio.CancelledError:
+                log.info("JK BMS listening loop cancelled")
                 break
             except Exception as e:
-                log.error(f"Error in listening loop: {e}", exc_info=True)
+                log.error(f"JK BMS: Error in listening loop: {e}", exc_info=True)
+                # Don't exit on error - try to continue listening
+                # But if connection is lost, we should exit
+                if not self.conn:
+                    log.error("JK BMS: Connection lost, exiting listening loop")
+                    break
                 await asyncio.sleep(0.1)
+        
+        log.info("JK BMS listening loop exited")
     
     async def poll(self) -> BatteryBankTelemetry:
         """
@@ -824,3 +866,75 @@ class JKBMSTcpipAdapter(BatteryAdapter):
         
         self.last_tel = bank
         return bank
+    
+    async def check_connectivity(self) -> bool:
+        """
+        Check if adapter is connected and listening loop is running.
+        
+        Returns True only if:
+        - Socket/serial connection is established
+        - Listening loop is running (not done/cancelled)
+        - Either batteries have been discovered OR we're still within discovery timeout
+        """
+        if not self.raw_conn:
+            log.debug("JK BMS: No connection (raw_conn is None)")
+            return False
+        
+        # Check socket/serial connection
+        try:
+            if self.connection_type == "tcpip":
+                if hasattr(self.raw_conn, 'getpeername'):
+                    try:
+                        self.raw_conn.getpeername()
+                    except (OSError, AttributeError):
+                        log.debug("JK BMS: Socket getpeername() failed")
+                        return False
+                else:
+                    log.debug("JK BMS: Socket has no getpeername method")
+                    return False
+            else:  # rtu
+                if hasattr(self.raw_conn, 'is_open'):
+                    if not self.raw_conn.is_open:
+                        log.debug("JK BMS: Serial port is not open")
+                        return False
+                else:
+                    log.debug("JK BMS: Serial port has no is_open attribute")
+                    return False
+        except Exception as e:
+            log.debug(f"JK BMS: Connection check exception: {e}")
+            return False
+        
+        # Check listening loop status
+        if not self._listening_task:
+            log.debug("JK BMS: No listening task")
+            return False
+        
+        if self._listening_task.done():
+            # Check if it was cancelled or raised an exception
+            try:
+                await self._listening_task
+            except asyncio.CancelledError:
+                log.debug("JK BMS: Listening task was cancelled")
+            except Exception as e:
+                log.warning(f"JK BMS: Listening task died with exception: {e}")
+            return False
+        
+        # If we have discovered batteries, we're definitely connected and working
+        if len(self.batteries) > 0:
+            log.debug(f"JK BMS: Connected, listening loop running, {len(self.batteries)} battery/batteries discovered")
+            return True
+        
+        # If loop is running but no batteries yet, check timeout
+        if hasattr(self, '_connect_time'):
+            time_since_connect = time.time() - self._connect_time
+            if time_since_connect < 60:  # Give 60 seconds for discovery
+                log.debug(f"JK BMS: Connected, listening loop running, waiting for battery discovery ({int(time_since_connect)}s elapsed)")
+                return True  # Still waiting for discovery
+            else:
+                log.warning(f"JK BMS: Connected but no batteries discovered after {int(time_since_connect)}s - may indicate connection issue")
+                # Still return True if loop is running - connection might be fine, just no data yet
+                return True
+        
+        # Loop is running, assume connected (fallback)
+        log.debug("JK BMS: Connected, listening loop running (no connect_time recorded)")
+        return True

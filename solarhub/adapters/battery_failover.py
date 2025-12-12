@@ -251,19 +251,40 @@ class FailoverBatteryAdapter(BatteryAdapter):
     async def check_connectivity(self) -> bool:
         """Check if current adapter is connected and responding."""
         if not self.current_adapter:
+            log.debug("Failover adapter: No current adapter")
             return False
         
         try:
+            # Use adapter's own check_connectivity if available (preferred)
             if hasattr(self.current_adapter, 'check_connectivity'):
-                return await self.current_adapter.check_connectivity()
+                is_connected = await self.current_adapter.check_connectivity()
+                if is_connected:
+                    return True
+                else:
+                    log.debug(f"Failover adapter: Current adapter ({self.current_adapter.bank_cfg.adapter.type}) reports disconnected")
+                    # Try failover
+                    if await self._try_failover():
+                        log.info("Failover adapter: Failover successful, checking new adapter")
+                        return await self.check_connectivity()  # Recursive check with new adapter
+                    return False
             else:
-                # Fallback: try to poll
-                await self.current_adapter.poll()
-                return True
-        except Exception:
+                # Fallback: try to poll (but this might be expensive)
+                try:
+                    await self.current_adapter.poll()
+                    return True
+                except Exception as e:
+                    log.debug(f"Failover adapter: Poll failed for current adapter: {e}")
+                    # Try failover
+                    if await self._try_failover():
+                        log.info("Failover adapter: Failover successful after poll failure")
+                        return await self.check_connectivity()  # Recursive check with new adapter
+                    return False
+        except Exception as e:
+            log.warning(f"Failover adapter: check_connectivity exception: {e}")
             # Try failover
             if await self._try_failover():
-                return await self.check_connectivity()
+                log.info("Failover adapter: Failover successful after exception")
+                return await self.check_connectivity()  # Recursive check with new adapter
             return False
     
     def get_current_adapter_info(self) -> Dict[str, Any]:
