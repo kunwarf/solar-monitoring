@@ -237,22 +237,332 @@ def validate_hierarchy(db_path: str) -> Tuple[bool, List[str]]:
         con.close()
 
 
-def validate_and_raise(db_path: str) -> None:
+def validate_data_migration(db_path: str) -> Tuple[bool, List[str]]:
     """
-    Validate hierarchy and raise exception if invalid.
+    Validate that data migration has been completed for all devices.
+    
+    Checks:
+    1. All inverters have entries in hourly_energy table (at least one record)
+    2. All arrays have entries in array_hourly_energy table
+    3. All systems have entries in system_hourly_energy table
+    4. All battery packs have entries in battery_bank_hourly table
+    5. All meters have entries in meter_hourly_energy table (if applicable)
     
     Args:
         db_path: Path to SQLite database
         
+    Returns:
+        Tuple of (is_valid, list_of_warnings)
+    """
+    warnings = []
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    
+    try:
+        # ============= 1. VALIDATE INVERTER DATA MIGRATION =============
+        cur.execute("SELECT inverter_id FROM inverters")
+        all_inverters = {row[0] for row in cur.fetchall()}
+        
+        if all_inverters:
+            cur.execute("SELECT DISTINCT inverter_id FROM hourly_energy")
+            inverters_with_data = {row[0] for row in cur.fetchall()}
+            
+            missing_inverters = all_inverters - inverters_with_data
+            if missing_inverters:
+                warnings.append(f"Inverters without hourly_energy data: {', '.join(sorted(missing_inverters))}")
+            else:
+                log.debug(f"All {len(all_inverters)} inverters have hourly_energy data")
+        
+        # ============= 2. VALIDATE ARRAY DATA MIGRATION =============
+        cur.execute("SELECT array_id FROM arrays")
+        all_arrays = {row[0] for row in cur.fetchall()}
+        
+        if all_arrays:
+            try:
+                cur.execute("SELECT DISTINCT array_id FROM array_hourly_energy")
+                arrays_with_data = {row[0] for row in cur.fetchall()}
+                
+                missing_arrays = all_arrays - arrays_with_data
+                if missing_arrays:
+                    warnings.append(f"Arrays without array_hourly_energy data: {', '.join(sorted(missing_arrays))}")
+                else:
+                    log.debug(f"All {len(all_arrays)} arrays have array_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("array_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 3. VALIDATE SYSTEM DATA MIGRATION =============
+        cur.execute("SELECT system_id FROM systems")
+        all_systems = {row[0] for row in cur.fetchall()}
+        
+        if all_systems:
+            try:
+                cur.execute("SELECT DISTINCT system_id FROM system_hourly_energy")
+                systems_with_data = {row[0] for row in cur.fetchall()}
+                
+                missing_systems = all_systems - systems_with_data
+                if missing_systems:
+                    warnings.append(f"Systems without system_hourly_energy data: {', '.join(sorted(missing_systems))}")
+                else:
+                    log.debug(f"All {len(all_systems)} systems have system_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("system_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 4. VALIDATE BATTERY PACK DATA MIGRATION =============
+        cur.execute("SELECT pack_id FROM battery_packs")
+        all_battery_packs = {row[0] for row in cur.fetchall()}
+        
+        if all_battery_packs:
+            try:
+                cur.execute("SELECT DISTINCT pack_id FROM battery_bank_hourly")
+                packs_with_data = {row[0] for row in cur.fetchall()}
+                
+                missing_packs = all_battery_packs - packs_with_data
+                if missing_packs:
+                    warnings.append(f"Battery packs without battery_bank_hourly data: {', '.join(sorted(missing_packs))}")
+                else:
+                    log.debug(f"All {len(all_battery_packs)} battery packs have battery_bank_hourly data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("battery_bank_hourly table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 5. VALIDATE METER DATA MIGRATION =============
+        cur.execute("SELECT meter_id FROM meters")
+        all_meters = {row[0] for row in cur.fetchall()}
+        
+        if all_meters:
+            try:
+                cur.execute("SELECT DISTINCT meter_id FROM meter_hourly_energy")
+                meters_with_data = {row[0] for row in cur.fetchall()}
+                
+                missing_meters = all_meters - meters_with_data
+                if missing_meters:
+                    warnings.append(f"Meters without meter_hourly_energy data: {', '.join(sorted(missing_meters))}")
+                else:
+                    log.debug(f"All {len(all_meters)} meters have meter_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("meter_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        is_valid = len(warnings) == 0
+        return is_valid, warnings
+        
+    except Exception as e:
+        log.error(f"Error during data migration validation: {e}", exc_info=True)
+        warnings.append(f"Data migration validation error: {str(e)}")
+        return False, warnings
+    finally:
+        con.close()
+
+
+def validate_statistics_generation(db_path: str, days_back: int = 7) -> Tuple[bool, List[str]]:
+    """
+    Validate that statistics have been generated for all devices.
+    
+    Checks that aggregated statistics exist for recent time periods:
+    1. Recent hourly_energy records for all inverters (within last N days)
+    2. Recent array_hourly_energy records for all arrays
+    3. Recent system_hourly_energy records for all systems
+    4. Recent battery_bank_hourly records for all battery packs
+    5. Recent meter_hourly_energy records for all meters
+    
+    Args:
+        db_path: Path to SQLite database
+        days_back: Number of days to check for recent data (default: 7)
+        
+    Returns:
+        Tuple of (is_valid, list_of_warnings)
+    """
+    warnings = []
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    
+    try:
+        from datetime import datetime, timedelta
+        from solarhub.timezone_utils import to_configured
+        
+        # Calculate date threshold
+        threshold_date = (datetime.utcnow() - timedelta(days=days_back)).date()
+        threshold_date_str = threshold_date.strftime('%Y-%m-%d')
+        
+        # ============= 1. VALIDATE RECENT INVERTER STATISTICS =============
+        cur.execute("SELECT inverter_id FROM inverters")
+        all_inverters = {row[0] for row in cur.fetchall()}
+        
+        if all_inverters:
+            cur.execute("""
+                SELECT DISTINCT inverter_id 
+                FROM hourly_energy 
+                WHERE date >= ?
+            """, (threshold_date_str,))
+            inverters_with_recent_data = {row[0] for row in cur.fetchall()}
+            
+            missing_inverters = all_inverters - inverters_with_recent_data
+            if missing_inverters:
+                warnings.append(f"Inverters without recent hourly_energy data (last {days_back} days): {', '.join(sorted(missing_inverters))}")
+            else:
+                log.debug(f"All {len(all_inverters)} inverters have recent hourly_energy data")
+        
+        # ============= 2. VALIDATE RECENT ARRAY STATISTICS =============
+        cur.execute("SELECT array_id FROM arrays")
+        all_arrays = {row[0] for row in cur.fetchall()}
+        
+        if all_arrays:
+            try:
+                cur.execute("""
+                    SELECT DISTINCT array_id 
+                    FROM array_hourly_energy 
+                    WHERE date >= ?
+                """, (threshold_date_str,))
+                arrays_with_recent_data = {row[0] for row in cur.fetchall()}
+                
+                missing_arrays = all_arrays - arrays_with_recent_data
+                if missing_arrays:
+                    warnings.append(f"Arrays without recent array_hourly_energy data (last {days_back} days): {', '.join(sorted(missing_arrays))}")
+                else:
+                    log.debug(f"All {len(all_arrays)} arrays have recent array_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("array_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 3. VALIDATE RECENT SYSTEM STATISTICS =============
+        cur.execute("SELECT system_id FROM systems")
+        all_systems = {row[0] for row in cur.fetchall()}
+        
+        if all_systems:
+            try:
+                cur.execute("""
+                    SELECT DISTINCT system_id 
+                    FROM system_hourly_energy 
+                    WHERE date >= ?
+                """, (threshold_date_str,))
+                systems_with_recent_data = {row[0] for row in cur.fetchall()}
+                
+                missing_systems = all_systems - systems_with_recent_data
+                if missing_systems:
+                    warnings.append(f"Systems without recent system_hourly_energy data (last {days_back} days): {', '.join(sorted(missing_systems))}")
+                else:
+                    log.debug(f"All {len(all_systems)} systems have recent system_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("system_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 4. VALIDATE RECENT BATTERY PACK STATISTICS =============
+        cur.execute("SELECT pack_id FROM battery_packs")
+        all_battery_packs = {row[0] for row in cur.fetchall()}
+        
+        if all_battery_packs:
+            try:
+                cur.execute("""
+                    SELECT DISTINCT pack_id 
+                    FROM battery_bank_hourly 
+                    WHERE date >= ?
+                """, (threshold_date_str,))
+                packs_with_recent_data = {row[0] for row in cur.fetchall()}
+                
+                missing_packs = all_battery_packs - packs_with_recent_data
+                if missing_packs:
+                    warnings.append(f"Battery packs without recent battery_bank_hourly data (last {days_back} days): {', '.join(sorted(missing_packs))}")
+                else:
+                    log.debug(f"All {len(all_battery_packs)} battery packs have recent battery_bank_hourly data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("battery_bank_hourly table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        # ============= 5. VALIDATE RECENT METER STATISTICS =============
+        cur.execute("SELECT meter_id FROM meters")
+        all_meters = {row[0] for row in cur.fetchall()}
+        
+        if all_meters:
+            try:
+                cur.execute("""
+                    SELECT DISTINCT meter_id 
+                    FROM meter_hourly_energy 
+                    WHERE date >= ?
+                """, (threshold_date_str,))
+                meters_with_recent_data = {row[0] for row in cur.fetchall()}
+                
+                missing_meters = all_meters - meters_with_recent_data
+                if missing_meters:
+                    warnings.append(f"Meters without recent meter_hourly_energy data (last {days_back} days): {', '.join(sorted(missing_meters))}")
+                else:
+                    log.debug(f"All {len(all_meters)} meters have recent meter_hourly_energy data")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    warnings.append("meter_hourly_energy table does not exist - statistics not generated")
+                else:
+                    raise
+        
+        is_valid = len(warnings) == 0
+        return is_valid, warnings
+        
+    except Exception as e:
+        log.error(f"Error during statistics validation: {e}", exc_info=True)
+        warnings.append(f"Statistics validation error: {str(e)}")
+        return False, warnings
+    finally:
+        con.close()
+
+
+def validate_and_raise(db_path: str, validate_data: bool = True, validate_statistics: bool = True, 
+                       statistics_days_back: int = 7) -> None:
+    """
+    Validate hierarchy, data migration, and statistics generation.
+    Raise exception if validation fails.
+    
+    Args:
+        db_path: Path to SQLite database
+        validate_data: Whether to validate data migration (default: True)
+        validate_statistics: Whether to validate statistics generation (default: True)
+        statistics_days_back: Number of days to check for recent statistics (default: 7)
+        
     Raises:
         HierarchyValidationError: If validation fails
     """
-    is_valid, errors = validate_hierarchy(db_path)
+    all_errors = []
     
+    # 1. Validate hierarchy structure
+    is_valid, errors = validate_hierarchy(db_path)
     if not is_valid:
-        error_msg = "Hierarchy validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
+        all_errors.extend([f"Hierarchy structure: {error}" for error in errors])
+    
+    # 2. Validate data migration
+    if validate_data:
+        is_valid, warnings = validate_data_migration(db_path)
+        if not is_valid:
+            all_errors.extend([f"Data migration: {warning}" for warning in warnings])
+        else:
+            log.info("Data migration validation passed - all devices have migrated data")
+    
+    # 3. Validate statistics generation
+    if validate_statistics:
+        is_valid, warnings = validate_statistics_generation(db_path, days_back=statistics_days_back)
+        if not is_valid:
+            all_errors.extend([f"Statistics generation: {warning}" for warning in warnings])
+        else:
+            log.info(f"Statistics validation passed - all devices have recent statistics (last {statistics_days_back} days)")
+    
+    if all_errors:
+        error_msg = "Validation failed:\n" + "\n".join(f"  - {error}" for error in all_errors)
         log.error(error_msg)
         raise HierarchyValidationError(error_msg)
     
-    log.info("Hierarchy validation passed successfully")
+    log.info("All validations passed successfully")
 
