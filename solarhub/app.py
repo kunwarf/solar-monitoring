@@ -143,6 +143,9 @@ class SolarApp:
             # Build runtime objects from hierarchy
             self._build_runtime_from_hierarchy()
             
+            # Validate telemetry data integrity (non-blocking, warnings only)
+            self._validate_telemetry_data()
+            
         except Exception as e:
             log.error(f"Failed to load hierarchy from database: {e}", exc_info=True)
             log.error("CRITICAL: Hierarchy migration failed. Application cannot start.")
