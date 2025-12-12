@@ -587,9 +587,14 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                     conn_status = "connected" if self.conn is not None else "disconnected"
                     batteries_status = f"{len(self.batteries)}/{self.batteries_expected}"
                     time_elapsed = int((current_time - (getattr(self, '_connect_time', current_time))) / 60)
-                    log.info(f"JK BMS listening loop active: conn={conn_status}, batteries_discovered={batteries_status}, current_battery_id={self.current_battery_id}, elapsed={time_elapsed}m")
+                    data_received = getattr(self, '_data_received_count', 0)
+                    empty_chunks = getattr(self, '_empty_chunk_count', 0)
+                    log.info(f"JK BMS listening loop active: conn={conn_status}, batteries_discovered={batteries_status}, current_battery_id={self.current_battery_id}, elapsed={time_elapsed}m, data_chunks={data_received}, empty_chunks={empty_chunks}")
                     if len(self.batteries) == 0:
-                        log.warning(f"JK BMS: No batteries discovered yet after {time_elapsed} minutes. Check RS485 connection and BMS broadcasting.")
+                        if data_received == 0:
+                            log.warning(f"JK BMS: No batteries discovered and NO DATA RECEIVED after {time_elapsed} minutes. Check RS485 gateway connection, network, and BMS broadcasting.")
+                        else:
+                            log.warning(f"JK BMS: No batteries discovered after {time_elapsed} minutes despite receiving {data_received} data chunks. Check data format/parsing.")
                     last_log_time = current_time
                 
                 # Log detailed status every 5 minutes
@@ -618,10 +623,19 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                     if not hasattr(self, '_data_received_count'):
                         self._data_received_count = 0
                     self._data_received_count += 1
-                    if self._data_received_count <= 5:
-                        log.info(f"JK BMS received {len(chunk)} bytes of data (total chunks received: {self._data_received_count})")
+                    if self._data_received_count <= 10:
+                        # Log first 10 chunks with hex dump for debugging
+                        hex_preview = chunk[:32].hex() if len(chunk) >= 32 else chunk.hex()
+                        log.info(f"JK BMS received {len(chunk)} bytes of data (chunk #{self._data_received_count}): {hex_preview}...")
                     elif self._data_received_count % 100 == 0:
                         log.debug(f"JK BMS received {len(chunk)} bytes of data (total chunks: {self._data_received_count})")
+                else:
+                    # Log when we get empty chunks (might indicate connection issue)
+                    if not hasattr(self, '_empty_chunk_count'):
+                        self._empty_chunk_count = 0
+                    self._empty_chunk_count += 1
+                    if self._empty_chunk_count <= 5:
+                        log.warning(f"JK BMS received empty chunk (count: {self._empty_chunk_count}) - connection may be idle or broken")
                 
                 buffer += chunk
                 pos = 0
