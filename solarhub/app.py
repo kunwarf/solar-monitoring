@@ -185,6 +185,124 @@ class SolarApp:
         log.info(f"Built runtime objects from hierarchy: {len(self._hierarchy_inverters)} inverters, "
                 f"{len(self._hierarchy_battery_packs)} battery packs, {len(self._hierarchy_meters)} meters")
     
+    def _validate_telemetry_data(self):
+        """Validate telemetry data integrity and log warnings for missing data."""
+        try:
+            from solarhub.validate_telemetry import TelemetryValidator
+            
+            log.info("Validating telemetry data integrity...")
+            validator = TelemetryValidator(self.logger.path)
+            try:
+                results = validator.validate_all()
+                
+                # Log summary
+                summary = results.get("summary", {})
+                overall_status = summary.get("overall_status", "unknown")
+                total_issues = summary.get("total_issues", 0)
+                total_warnings = summary.get("total_warnings", 0)
+                
+                if overall_status == "error":
+                    log.error(f"Telemetry validation found {total_issues} critical issue(s)")
+                    for issue in summary.get("issues", []):
+                        log.error(f"  - {issue}")
+                elif overall_status == "warning":
+                    log.warning(f"Telemetry validation found {total_warnings} warning(s)")
+                    for warning in summary.get("warnings", []):
+                        log.warning(f"  - {warning}")
+                else:
+                    log.info("Telemetry validation passed - all tables have expected data")
+                
+                # Log detailed device-level information
+                checks = results.get("checks", {})
+                
+                # Inverter telemetry check
+                inv_check = checks.get("inverter_telemetry", {})
+                if inv_check.get("status") == "warning":
+                    missing = inv_check.get("missing_inverters", [])
+                    if missing:
+                        log.warning(f"Inverters without telemetry data: {', '.join(missing)}")
+                    # Log sample counts
+                    sample_counts = inv_check.get("sample_counts", {})
+                    for inv_id, count in sample_counts.items():
+                        if count == 0:
+                            log.warning(f"Inverter {inv_id}: No telemetry samples found")
+                        else:
+                            latest = inv_check.get("latest_samples", {}).get(inv_id)
+                            log.debug(f"Inverter {inv_id}: {count} samples, latest: {latest}")
+                
+                # Battery telemetry check
+                bat_check = checks.get("battery_telemetry", {})
+                if bat_check.get("status") == "warning":
+                    missing = bat_check.get("missing_packs", [])
+                    if missing:
+                        log.warning(f"Battery packs without telemetry data: {', '.join(missing)}")
+                    # Log sample counts
+                    sample_counts = bat_check.get("sample_counts", {})
+                    for pack_id, count in sample_counts.items():
+                        if count == 0:
+                            log.warning(f"Battery pack {pack_id}: No telemetry samples found")
+                        else:
+                            latest = bat_check.get("latest_samples", {}).get(pack_id)
+                            log.debug(f"Battery pack {pack_id}: {count} samples, latest: {latest}")
+                
+                # Meter telemetry check
+                meter_check = checks.get("meter_telemetry", {})
+                if meter_check.get("status") == "warning":
+                    missing = meter_check.get("missing_meters", [])
+                    if missing:
+                        log.warning(f"Meters without telemetry data: {', '.join(missing)}")
+                    # Log sample counts
+                    sample_counts = meter_check.get("sample_counts", {})
+                    for meter_id, count in sample_counts.items():
+                        if count == 0:
+                            log.warning(f"Meter {meter_id}: No telemetry samples found")
+                        else:
+                            latest = meter_check.get("latest_samples", {}).get(meter_id)
+                            log.debug(f"Meter {meter_id}: {count} samples, latest: {latest}")
+                
+                # Battery cells check
+                cells_check = checks.get("battery_cells", {})
+                if cells_check.get("status") == "warning":
+                    missing = cells_check.get("missing_batteries", [])
+                    if missing:
+                        log.warning(f"Batteries without cell data: {', '.join(missing)}")
+                
+                # Recent data check
+                recent_check = checks.get("recent_data", {})
+                if recent_check:
+                    recent_counts = recent_check.get("recent_sample_counts", {})
+                    inv_samples = recent_counts.get("inverter_samples", 0)
+                    bat_samples = recent_counts.get("battery_samples", 0)
+                    meter_samples = recent_counts.get("meter_samples", 0)
+                    
+                    if inv_samples == 0:
+                        log.warning("No inverter telemetry samples in the last 24 hours")
+                    if bat_samples == 0:
+                        log.warning("No battery telemetry samples in the last 24 hours")
+                    if meter_samples == 0 and self._hierarchy_meters:
+                        log.warning("No meter telemetry samples in the last 24 hours")
+                
+                # Hourly energy aggregation check
+                hourly_check = checks.get("hourly_energy", {})
+                if hourly_check:
+                    inv_hourly = hourly_check.get("inverter_hourly_count", 0)
+                    array_hourly = hourly_check.get("array_hourly_count", 0)
+                    system_hourly = hourly_check.get("system_hourly_count", 0)
+                    bat_hourly = hourly_check.get("battery_hourly_count", 0)
+                    meter_hourly = hourly_check.get("meter_hourly_count", 0)
+                    
+                    log.debug(f"Hourly energy records: {inv_hourly} inverters, {array_hourly} arrays, "
+                             f"{system_hourly} systems, {bat_hourly} battery packs, {meter_hourly} meters")
+                
+                log.info("Telemetry validation completed")
+                
+            finally:
+                validator.close()
+                
+        except Exception as e:
+            # Don't block startup if validation fails
+            log.warning(f"Telemetry validation failed (non-blocking): {e}", exc_info=True)
+    
     def _adapter_instance_to_inverter_config(self, inverter, adapter_instance) -> InverterConfig:
         """Convert hierarchy Inverter + AdapterInstance to InverterConfig."""
         from solarhub.config import InverterConfig, InverterAdapterConfig, SafetyLimits, SolarArrayParams
