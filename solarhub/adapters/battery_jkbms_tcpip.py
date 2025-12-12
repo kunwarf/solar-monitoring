@@ -570,7 +570,10 @@ class JKBMSTcpipAdapter(BatteryAdapter):
     async def _listen_loop(self):
         """Background task that continuously listens and parses frames."""
         buffer = b""
-        last_log_time = 0
+        last_log_time = 0.0
+        last_status_log_time = 0.0
+        
+        log.info(f"JK BMS listening loop started for {self.connection_type} connection")
         
         while not self._stop_listening:
             try:
