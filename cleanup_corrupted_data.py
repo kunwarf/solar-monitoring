@@ -250,6 +250,12 @@ def main():
     print(f"  Total rows: {result['total_rows']}")
     print(f"  Valid rows: {result['valid_rows']}")
     print(f"  Corrupted rows: {result['corrupted_count']}")
+    if 'encoding_errors' in result:
+        print(f"  Encoding errors: {result['encoding_errors']}")
+    
+    if 'error' in result:
+        print(f"\n✗ Error during scan: {result['error']}")
+        return 1
     
     if result['corrupted_count'] == 0:
         print("\n✓ No corrupted data found!")
