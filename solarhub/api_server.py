@@ -1391,21 +1391,116 @@ def create_api(solar_app) -> FastAPI:
                 home_dict["system_name"] = system.name
                 home_dict["system_description"] = system.description
                 home_dict["timezone"] = system.timezone
-            
-            # Ensure all arrays in response include hierarchy IDs
-            if "arrays" in home_dict and isinstance(home_dict["arrays"], list):
-                for array_data in home_dict["arrays"]:
-                    if "array_id" in array_data:
-                        array_id = array_data["array_id"]
-                        # Add system_id to array data
-                        array_data["system_id"] = target_system_id
-                        # Add hierarchy info if available
-                        if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
-                            for sys in solar_app.hierarchy_systems.values():
-                                for inv_array in sys.inverter_arrays:
-                                    if inv_array.array_id == array_id:
-                                        array_data["system_id"] = inv_array.system_id
-                                        break
+                
+                # Build proper hierarchy structure with nested arrays
+                inverter_arrays_hierarchy = []
+                battery_arrays_hierarchy = []
+                
+                # Build inverter arrays with nested inverters
+                for inv_array in system.inverter_arrays:
+                    # Get array telemetry if available
+                    array_tel = array_telemetry.get(inv_array.array_id)
+                    
+                    # Build inverters list for this array
+                    inverters_list = []
+                    for inverter in inv_array.inverters:
+                        inv_tel_dict = solar_app.get_now(inverter.inverter_id) if hasattr(solar_app, 'get_now') else None
+                        inverter_data = {
+                            "inverter_id": inverter.inverter_id,
+                            "name": inverter.name,
+                            "array_id": inverter.array_id,
+                            "system_id": inverter.system_id,
+                            "model": inverter.model,
+                            "serial_number": inverter.serial_number,
+                            "vendor": inverter.vendor,
+                            "phase_type": inverter.phase_type,
+                        }
+                        # Add telemetry if available
+                        if inv_tel_dict:
+                            inverter_data["telemetry"] = inv_tel_dict
+                        inverters_list.append(inverter_data)
+                    
+                    # Build inverter array structure
+                    inv_array_data = {
+                        "array_id": inv_array.array_id,
+                        "name": inv_array.name,
+                        "system_id": inv_array.system_id,
+                        "inverters": inverters_list,
+                        "attached_battery_array_id": inv_array.attached_battery_array_id,
+                    }
+                    # Add array telemetry if available
+                    if array_tel:
+                        inv_array_data["telemetry"] = array_tel.model_dump() if hasattr(array_tel, 'model_dump') else array_tel
+                    inverter_arrays_hierarchy.append(inv_array_data)
+                
+                # Build battery arrays with nested battery packs
+                for bat_array in system.battery_arrays:
+                    # Build battery packs list for this array
+                    battery_packs_list = []
+                    for pack in bat_array.battery_packs:
+                        pack_id = pack.pack_id
+                        # Get battery telemetry if available
+                        pack_tel = None
+                        if hasattr(solar_app, 'battery_last') and solar_app.battery_last:
+                            if isinstance(solar_app.battery_last, dict):
+                                pack_tel = solar_app.battery_last.get(pack_id)
+                        
+                        pack_data = {
+                            "pack_id": pack.pack_id,
+                            "name": pack.name,
+                            "battery_array_id": pack.battery_array_id,
+                            "system_id": pack.system_id,
+                            "chemistry": pack.chemistry,
+                            "nominal_kwh": pack.nominal_kwh,
+                            "max_charge_kw": pack.max_charge_kw,
+                            "max_discharge_kw": pack.max_discharge_kw,
+                        }
+                        # Add telemetry if available
+                        if pack_tel:
+                            pack_data["telemetry"] = {
+                                "soc": pack_tel.soc,
+                                "voltage": pack_tel.voltage,
+                                "current": pack_tel.current,
+                                "power": pack_tel.voltage * pack_tel.current if pack_tel.voltage and pack_tel.current else None,
+                                "temperature": pack_tel.temperature,
+                                "ts": pack_tel.ts,
+                            }
+                        battery_packs_list.append(pack_data)
+                    
+                    # Build battery array structure
+                    bat_array_data = {
+                        "battery_array_id": bat_array.battery_array_id,
+                        "name": bat_array.name,
+                        "system_id": bat_array.system_id,
+                        "battery_packs": battery_packs_list,
+                        "attached_inverter_array_id": bat_array.attached_inverter_array_id,
+                    }
+                    battery_arrays_hierarchy.append(bat_array_data)
+                
+                # Add hierarchy structure to response
+                home_dict["inverter_arrays"] = inverter_arrays_hierarchy
+                home_dict["battery_arrays"] = battery_arrays_hierarchy
+                
+                # Keep the flat arrays list for backward compatibility, but add hierarchy info
+                if "arrays" in home_dict and isinstance(home_dict["arrays"], list):
+                    for array_data in home_dict["arrays"]:
+                        if "array_id" in array_data:
+                            array_id = array_data["array_id"]
+                            array_data["system_id"] = target_system_id
+                            # Find matching inverter array and add hierarchy info
+                            for inv_array in system.inverter_arrays:
+                                if inv_array.array_id == array_id:
+                                    array_data["system_id"] = inv_array.system_id
+                                    array_data["array_name"] = inv_array.name
+                                    array_data["inverter_ids"] = inv_array.inverter_ids
+                                    array_data["attached_battery_array_id"] = inv_array.attached_battery_array_id
+                                    break
+            else:
+                # Fallback: ensure arrays have basic info
+                if "arrays" in home_dict and isinstance(home_dict["arrays"], list):
+                    for array_data in home_dict["arrays"]:
+                        if "array_id" in array_data:
+                            array_data["system_id"] = target_system_id
             
             return {
                 "status": "ok",
