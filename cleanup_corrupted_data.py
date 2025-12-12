@@ -62,48 +62,141 @@ def identify_corrupted_rows(db_path: str) -> Dict[str, Any]:
     
     corrupted_rows = []
     valid_rows = 0
-    
-    # Fetch all rows and check each one
-    cur.execute("SELECT rowid, ts, bank_id, power, cell, voltage, temperature FROM battery_cell_samples")
+    encoding_errors = 0
     
     print("Scanning battery_cell_samples table for corrupted data...")
     print(f"Total rows: {total_count}")
+    print("This may take a while for large tables...")
     
-    for row in cur.fetchall():
-        rowid, ts, bank_id, power, cell, voltage, temp = row
-        issues = []
-        
-        # Check bank_id
-        if not is_valid_bank_id(bank_id):
-            issues.append(f"invalid_bank_id: {repr(bank_id)}")
-        
-        # Check power
-        if not is_valid_power(power):
-            issues.append(f"invalid_power: {repr(power)}")
-        
-        # Check cell
-        if not is_valid_cell(cell):
-            issues.append(f"invalid_cell: {repr(cell)}")
-        
-        if issues:
-            corrupted_rows.append({
-                "rowid": rowid,
-                "ts": ts,
-                "bank_id": bank_id,
-                "power": power,
-                "cell": cell,
-                "issues": issues
-            })
+    # Use rowid to iterate, checking each row individually to handle encoding errors
+    # Get min and max rowid first
+    try:
+        cur.execute("SELECT MIN(rowid), MAX(rowid) FROM battery_cell_samples")
+        result = cur.fetchone()
+        if result and result[0] is not None:
+            min_rowid, max_rowid = result[0], result[1]
         else:
-            valid_rows += 1
+            print("No rows found in table")
+            conn.close()
+            return {
+                "total_rows": 0,
+                "valid_rows": 0,
+                "corrupted_rows": [],
+                "corrupted_count": 0
+            }
+    except Exception as e:
+        print(f"Error getting rowid range: {e}")
+        conn.close()
+        return {
+            "total_rows": total_count,
+            "valid_rows": 0,
+            "corrupted_rows": [],
+            "corrupted_count": 0,
+            "error": str(e)
+        }
+    
+    # Process in batches to avoid memory issues
+    batch_size = 1000
+    processed = 0
+    
+    for batch_start in range(min_rowid, max_rowid + 1, batch_size):
+        batch_end = min(batch_start + batch_size - 1, max_rowid)
+        
+        # Get rowids in this batch
+        try:
+            cur.execute(
+                "SELECT rowid FROM battery_cell_samples WHERE rowid >= ? AND rowid <= ?",
+                (batch_start, batch_end)
+            )
+            rowids = [row[0] for row in cur.fetchall()]
+        except Exception as e:
+            print(f"Error getting rowids in batch {batch_start}-{batch_end}: {e}")
+            continue
+        
+        # Check each row individually
+        for rowid in rowids:
+            try:
+                # Try to fetch the row - this will fail if there's an encoding error
+                cur.execute(
+                    "SELECT ts, bank_id, power, cell, voltage, temperature FROM battery_cell_samples WHERE rowid = ?",
+                    (rowid,)
+                )
+                row = cur.fetchone()
+                
+                if row is None:
+                    continue
+                
+                ts, bank_id, power, cell, voltage, temp = row
+                issues = []
+                
+                # Check bank_id
+                if not is_valid_bank_id(bank_id):
+                    issues.append(f"invalid_bank_id")
+                
+                # Check power
+                if not is_valid_power(power):
+                    issues.append(f"invalid_power: {repr(power)}")
+                
+                # Check cell
+                if not is_valid_cell(cell):
+                    issues.append(f"invalid_cell: {repr(cell)}")
+                
+                if issues:
+                    # Try to get safe representation of values
+                    safe_bank_id = repr(bank_id) if not isinstance(bank_id, bytes) else f"<bytes: {len(bank_id)} bytes>"
+                    corrupted_rows.append({
+                        "rowid": rowid,
+                        "ts": str(ts) if ts else None,
+                        "bank_id": safe_bank_id,
+                        "power": power,
+                        "cell": cell,
+                        "issues": issues
+                    })
+                else:
+                    valid_rows += 1
+                
+                processed += 1
+                if processed % 10000 == 0:
+                    print(f"  Processed {processed}/{total_count} rows... ({len(corrupted_rows)} corrupted found so far)")
+                    
+            except sqlite3.OperationalError as e:
+                # Encoding error - this row is corrupted
+                encoding_errors += 1
+                try:
+                    # Try to at least get the rowid and mark it as corrupted
+                    corrupted_rows.append({
+                        "rowid": rowid,
+                        "ts": None,
+                        "bank_id": "<encoding_error>",
+                        "power": None,
+                        "cell": None,
+                        "issues": [f"encoding_error: {str(e)}"]
+                    })
+                except:
+                    # If even that fails, just count it
+                    pass
+            except Exception as e:
+                # Other errors - mark as corrupted
+                encoding_errors += 1
+                corrupted_rows.append({
+                    "rowid": rowid,
+                    "ts": None,
+                    "bank_id": "<error>",
+                    "power": None,
+                    "cell": None,
+                    "issues": [f"error: {str(e)[:50]}"]
+                })
     
     conn.close()
+    
+    print(f"\nScan complete: {processed} rows processed, {len(corrupted_rows)} corrupted found")
     
     return {
         "total_rows": total_count,
         "valid_rows": valid_rows,
         "corrupted_rows": corrupted_rows,
-        "corrupted_count": len(corrupted_rows)
+        "corrupted_count": len(corrupted_rows),
+        "encoding_errors": encoding_errors
     }
 
 def delete_corrupted_rows(db_path: str, corrupted_rowids: List[int], backup: bool = True) -> int:
