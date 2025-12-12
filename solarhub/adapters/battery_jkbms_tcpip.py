@@ -801,6 +801,12 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             cell_voltages = status.get('cell_voltages', [])
             valid_cells = [v for v in cell_voltages if v is not None]
             
+            # Debug logging for cell data
+            if len(valid_cells) == 0 and len(cell_voltages) > 0:
+                log.debug(f"JK BMS Battery {battery_id + 1}: Found {len(cell_voltages)} cell_voltages but all are None")
+            elif len(valid_cells) > 0:
+                log.debug(f"JK BMS Battery {battery_id + 1}: Found {len(valid_cells)} valid cells out of {len(cell_voltages)} total")
+            
             # Create BatteryUnit
             # Note: 'power' field should be the battery unit index (1-based: 1, 2, 3, ...)
             # This is used by the frontend to identify and match cells to battery units
@@ -847,7 +853,11 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                 cell_data["voltage_delta"] = round(max(valid_cells) - min(valid_cells), 3)
                 cell_data["cell_delta"] = round(max(valid_cells) - min(valid_cells), 3)
                 cell_data["cell_count"] = len(valid_cells)
+                log.debug(f"JK BMS Battery {battery_id + 1}: Added {len(cell_data['cells'])} cells to cells_data")
+            else:
+                log.debug(f"JK BMS Battery {battery_id + 1}: No valid cells found, cell_data will have empty cells array")
             
+            # Always append cell_data, even if cells array is empty (for debugging)
             cells_data.append(cell_data)
         
         # Aggregate bank-level values
@@ -867,7 +877,7 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             temperature=round(sum(temperatures) / len(temperatures), 1) if temperatures else None,
             soc=int(sum(socs) / len(socs)) if socs else None,
             devices=devices,
-            cells_data=cells_data if cells_data else None,
+            cells_data=cells_data if cells_data else None,  # Set to None if empty list
             extra={
                 "dev_name": cfg.dev_name,
                 "manufacturer": cfg.manufacturer,
