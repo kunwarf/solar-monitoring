@@ -46,8 +46,17 @@ class TelemetryValidator:
         # Check daily energy aggregation
         results["checks"]["daily_energy"] = self.check_daily_energy()
         
-        # Check battery cells data
+        # Check battery cells data (hierarchy definition)
         results["checks"]["battery_cells"] = self.check_battery_cells()
+        
+        # Check battery unit samples
+        results["checks"]["battery_units"] = self.check_battery_units()
+        
+        # Check battery cell samples
+        results["checks"]["battery_cell_samples"] = self.check_battery_cell_samples()
+        
+        # Check complete hierarchy data
+        results["checks"]["hierarchy_data"] = self.check_hierarchy_data()
         
         # Check recent data (last 24 hours)
         results["checks"]["recent_data"] = self.check_recent_data()
@@ -382,6 +391,26 @@ class TelemetryValidator:
             recent_data["meter_samples"] = self.cur.fetchone()[0]
         except sqlite3.OperationalError:
             recent_data["meter_samples"] = 0
+        
+        # Check recent battery unit samples
+        try:
+            self.cur.execute(
+                "SELECT COUNT(*) FROM battery_unit_samples WHERE ts >= ?",
+                (cutoff_str,)
+            )
+            recent_data["battery_unit_samples"] = self.cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            recent_data["battery_unit_samples"] = 0
+        
+        # Check recent battery cell samples
+        try:
+            self.cur.execute(
+                "SELECT COUNT(*) FROM battery_cell_samples WHERE ts >= ?",
+                (cutoff_str,)
+            )
+            recent_data["battery_cell_samples"] = self.cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            recent_data["battery_cell_samples"] = 0
         
         return {
             "status": "ok",
