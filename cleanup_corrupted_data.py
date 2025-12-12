@@ -156,8 +156,9 @@ def identify_corrupted_rows(db_path: str) -> Dict[str, Any]:
                     valid_rows += 1
                 
                 processed += 1
-                if processed % 10000 == 0:
-                    print(f"  Processed {processed}/{total_count} rows... ({len(corrupted_rows)} corrupted found so far)")
+                if processed % 50000 == 0:
+                    pct = (processed / total_count * 100) if total_count > 0 else 0
+                    print(f"  Processed {processed:,}/{total_count:,} rows ({pct:.1f}%)... ({len(corrupted_rows):,} corrupted found so far)")
                     
             except sqlite3.OperationalError as e:
                 # Encoding error - this row is corrupted
