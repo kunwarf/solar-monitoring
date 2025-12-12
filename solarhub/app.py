@@ -2718,8 +2718,28 @@ class SolarApp:
             return
         
         # Check connection status - support both serial (is_open) and BLE (is_connected) adapters
+        # Also support FailoverBatteryAdapter which wraps other adapters
         is_connected = False
-        if hasattr(adapter, 'client') and adapter.client:
+        
+        # For FailoverBatteryAdapter, check the current active adapter
+        if hasattr(adapter, 'current_adapter') and adapter.current_adapter:
+            # This is a failover adapter - check the current active adapter
+            current = adapter.current_adapter
+            if hasattr(current, 'client') and current.client:
+                # Serial adapters (pytes, jkbms_passive, jkbms_tcpip) use is_open
+                if hasattr(current.client, 'is_open'):
+                    is_connected = current.client.is_open
+                # Bluetooth adapters (jkbms_ble) use is_connected
+                elif hasattr(current.client, 'is_connected'):
+                    is_connected = current.client.is_connected
+            # For failover adapters, also try check_connectivity method
+            elif hasattr(adapter, 'check_connectivity'):
+                try:
+                    is_connected = await adapter.check_connectivity()
+                except Exception:
+                    is_connected = False
+        # For direct adapters (non-failover)
+        elif hasattr(adapter, 'client') and adapter.client:
             # Serial adapters (pytes, jkbms_passive) use is_open
             if hasattr(adapter.client, 'is_open'):
                 is_connected = adapter.client.is_open
