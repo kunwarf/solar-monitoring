@@ -449,12 +449,56 @@ class TelemetryValidator:
         elif meter_check.get("missing_meters"):
             warnings.append(f"Meters without data: {meter_check.get('missing_meters')}")
         
-        # Check battery cells
+        # Check battery cells (hierarchy definition)
         cells_check = checks.get("battery_cells", {})
         if cells_check.get("status") == "error":
             issues.append(f"Battery cells check failed: {cells_check.get('error')}")
         elif cells_check.get("missing_batteries"):
-            warnings.append(f"Batteries without cell data: {cells_check.get('missing_batteries')}")
+            warnings.append(f"Batteries without cell definitions: {cells_check.get('missing_batteries')}")
+        
+        # Check battery unit samples
+        units_check = checks.get("battery_units", {})
+        if units_check.get("status") == "error":
+            issues.append(f"Battery units check failed: {units_check.get('error')}")
+        elif units_check.get("missing_packs"):
+            warnings.append(f"Battery packs without unit samples: {units_check.get('missing_packs')}")
+        
+        # Check battery cell samples
+        cell_samples_check = checks.get("battery_cell_samples", {})
+        if cell_samples_check.get("status") == "error":
+            issues.append(f"Battery cell samples check failed: {cell_samples_check.get('error')}")
+        elif cell_samples_check.get("missing_packs"):
+            warnings.append(f"Battery packs without cell samples: {cell_samples_check.get('missing_packs')}")
+        
+        # Check hierarchy data
+        hierarchy_check = checks.get("hierarchy_data", {})
+        if hierarchy_check.get("status") == "error":
+            issues.append(f"Hierarchy data check failed: {hierarchy_check.get('error')}")
+        elif hierarchy_check.get("status") == "warning":
+            hierarchy = hierarchy_check.get("hierarchy", {})
+            if hierarchy.get("inverters", {}).get("count", 0) > hierarchy.get("inverters", {}).get("with_data", 0):
+                warnings.append(f"Some inverters have no telemetry data")
+            if hierarchy.get("battery_packs", {}).get("count", 0) > hierarchy.get("battery_packs", {}).get("with_bank_data", 0):
+                warnings.append(f"Some battery packs have no bank-level telemetry data")
+        
+        # Check hourly energy aggregation
+        hourly = checks.get("hourly_energy", {})
+        if hourly.get("status") == "ok":
+            if hourly.get("battery_hourly_count", 0) == 0:
+                warnings.append("No battery hourly energy aggregation data found")
+        
+        # Check daily energy aggregation
+        daily = checks.get("daily_energy", {})
+        if daily.get("status") == "ok":
+            counts = daily.get("daily_record_counts", {})
+            if counts.get("array_daily_summary", 0) == 0:
+                warnings.append("No array daily energy summaries found")
+            if counts.get("system_daily_summary", 0) == 0:
+                warnings.append("No system daily energy summaries found")
+            if counts.get("battery_bank_daily", 0) == 0:
+                warnings.append("No battery pack daily energy summaries found")
+            if counts.get("meter_daily", 0) == 0:
+                warnings.append("No meter daily energy summaries found")
         
         return {
             "total_issues": len(issues),
