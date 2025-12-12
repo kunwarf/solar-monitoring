@@ -71,8 +71,10 @@ class TelemetryValidator:
         expected_tables = [
             "energy_samples",  # Inverter telemetry
             "battery_bank_samples",  # Battery pack telemetry
+            "battery_unit_samples",  # Battery unit (individual battery) telemetry
+            "battery_cell_samples",  # Battery cell telemetry
             "meter_samples",  # Meter telemetry
-            "battery_cells",  # Battery cell data
+            "battery_cells",  # Battery cell hierarchy definitions
             "hourly_energy",  # Aggregated hourly energy
             "array_hourly_energy",  # Array-level hourly energy
             "system_hourly_energy",  # System-level hourly energy
