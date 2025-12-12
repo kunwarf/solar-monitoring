@@ -141,13 +141,9 @@ class SolarApp:
             
         except Exception as e:
             log.error(f"Failed to load hierarchy from database: {e}", exc_info=True)
-            log.warning("Falling back to config.yaml-based runtime objects")
-            # Fallback to config-based approach
-            from solarhub.config_migration import build_array_runtime_objects, build_pack_runtime_objects, build_battery_bank_array_runtime_objects
-            self.arrays = build_array_runtime_objects(cfg) if cfg.arrays else {}
-            self.packs = build_pack_runtime_objects(cfg) if cfg.battery_packs else {}
-            self.battery_bank_arrays = build_battery_bank_array_runtime_objects(cfg) if cfg.battery_bank_arrays else {}
-            self.hierarchy_systems = {}
+            log.error("CRITICAL: Hierarchy migration failed. Application cannot start.")
+            log.error("Please check the database migration logs and fix the issues before restarting.")
+            raise RuntimeError(f"Failed to load hierarchy from database: {e}") from e
     
     def _build_runtime_from_hierarchy(self):
         """Build runtime objects (inverters, battery packs, meters) from hierarchy."""

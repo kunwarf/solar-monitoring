@@ -84,7 +84,15 @@ class DataLogger:
                 log.warning(f"Config.yaml migration failed (may not exist or may have errors): {e}")
             
             # Step 4: Migrate production data
-            migrate_production_data(self.path)
+            # Get system_id from database (from config migration or default)
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("SELECT system_id FROM systems ORDER BY created_at LIMIT 1")
+            result = cur.fetchone()
+            system_id = result[0] if result else 'system'
+            con.close()
+            
+            migrate_production_data(self.path, system_id=system_id)
             
             # Step 5: Backfill system_ids in all tables
             backfill_system_ids(self.path)

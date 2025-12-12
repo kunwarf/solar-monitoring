@@ -1644,15 +1644,15 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
             log.info(f"Linked {updated} arrays to system {system_id}")
         
         # ============= 2. LINK EXISTING BATTERY PACKS TO SYSTEM AND ARRAY =============
-        # First, try to infer battery_array_id from battery_pack_attachments
+        # Update all battery packs to use the same system_id (fix any mismatches)
         cur.execute("""
             UPDATE battery_packs 
             SET system_id = ?
-            WHERE system_id IS NULL
-        """, (system_id,))
+            WHERE system_id != ? OR system_id IS NULL
+        """, (system_id, system_id))
         updated = cur.rowcount
         if updated > 0:
-            log.info(f"Linked {updated} battery packs to system {system_id}")
+            log.info(f"Updated {updated} battery packs to system {system_id}")
         
         # If battery_array_id is NULL, assign to default battery array
         cur.execute("""
