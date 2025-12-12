@@ -164,7 +164,7 @@ class EnergyCalculator:
         start_time_configured = to_configured(start_time)
         end_time_configured = to_configured(end_time)
         
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -272,7 +272,7 @@ class EnergyCalculator:
     
     def store_hourly_energy(self, inverter_id: str, hour_start: datetime, energy_data: Dict[str, float]):
         """Store calculated energy data in the hourly_energy table."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -324,7 +324,7 @@ class EnergyCalculator:
     
     def get_hourly_energy_data(self, inverter_id: str, start_time: datetime, end_time: datetime) -> List[Dict]:
         """Get hourly energy data from the database."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -468,7 +468,7 @@ class EnergyCalculator:
             # date object - assume it's already in configured timezone
             date_str = date.strftime('%Y-%m-%d')
         
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -723,7 +723,7 @@ class EnergyCalculator:
         Returns:
             List of hourly energy data dictionaries
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -806,7 +806,7 @@ class EnergyCalculator:
         Returns:
             List of hourly energy data dictionaries
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
