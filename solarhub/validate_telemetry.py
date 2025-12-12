@@ -357,6 +357,145 @@ class TelemetryValidator:
                 "error": str(e),
             }
     
+    def check_battery_units(self) -> Dict[str, Any]:
+        """Check battery unit samples data."""
+        try:
+            # Get all battery packs from hierarchy
+            self.cur.execute("SELECT DISTINCT pack_id FROM battery_packs")
+            expected_packs = [row[0] for row in self.cur.fetchall()]
+            
+            # Check battery_unit_samples table
+            self.cur.execute("SELECT DISTINCT bank_id FROM battery_unit_samples")
+            packs_with_unit_data = [row[0] for row in self.cur.fetchall()]
+            
+            missing_packs = [p for p in expected_packs if p not in packs_with_unit_data]
+            
+            # Get unit sample counts per pack
+            unit_counts = {}
+            latest_samples = {}
+            for pack_id in expected_packs:
+                self.cur.execute(
+                    "SELECT COUNT(*), MAX(ts) FROM battery_unit_samples WHERE bank_id = ?",
+                    (pack_id,)
+                )
+                result = self.cur.fetchone()
+                unit_counts[pack_id] = result[0] if result else 0
+                latest_samples[pack_id] = result[1] if result and result[1] else None
+            
+            return {
+                "status": "ok" if not missing_packs else "warning",
+                "expected_packs": expected_packs,
+                "packs_with_unit_data": packs_with_unit_data,
+                "missing_packs": missing_packs,
+                "unit_sample_counts": unit_counts,
+                "latest_samples": latest_samples,
+            }
+        except sqlite3.OperationalError as e:
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+    
+    def check_battery_cell_samples(self) -> Dict[str, Any]:
+        """Check battery cell samples data."""
+        try:
+            # Get all battery packs from hierarchy
+            self.cur.execute("SELECT DISTINCT pack_id FROM battery_packs")
+            expected_packs = [row[0] for row in self.cur.fetchall()]
+            
+            # Check battery_cell_samples table
+            self.cur.execute("SELECT DISTINCT bank_id FROM battery_cell_samples")
+            packs_with_cell_data = [row[0] for row in self.cur.fetchall()]
+            
+            missing_packs = [p for p in expected_packs if p not in packs_with_cell_data]
+            
+            # Get cell sample counts per pack
+            cell_counts = {}
+            latest_samples = {}
+            for pack_id in expected_packs:
+                self.cur.execute(
+                    "SELECT COUNT(*), MAX(ts) FROM battery_cell_samples WHERE bank_id = ?",
+                    (pack_id,)
+                )
+                result = self.cur.fetchone()
+                cell_counts[pack_id] = result[0] if result else 0
+                latest_samples[pack_id] = result[1] if result and result[1] else None
+            
+            return {
+                "status": "ok" if not missing_packs else "warning",
+                "expected_packs": expected_packs,
+                "packs_with_cell_data": packs_with_cell_data,
+                "missing_packs": missing_packs,
+                "cell_sample_counts": cell_counts,
+                "latest_samples": latest_samples,
+            }
+        except sqlite3.OperationalError as e:
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+    
+    def check_hierarchy_data(self) -> Dict[str, Any]:
+        """Check data at each level of the hierarchy."""
+        try:
+            hierarchy_status = {
+                "systems": {},
+                "arrays": {},
+                "inverters": {},
+                "battery_packs": {},
+                "batteries": {},
+                "cells": {},
+            }
+            
+            # Check systems
+            self.cur.execute("SELECT COUNT(*) FROM systems")
+            hierarchy_status["systems"]["count"] = self.cur.fetchone()[0]
+            
+            # Check arrays
+            self.cur.execute("SELECT COUNT(*) FROM arrays")
+            hierarchy_status["arrays"]["count"] = self.cur.fetchone()[0]
+            
+            # Check inverters
+            self.cur.execute("SELECT COUNT(*) FROM inverters")
+            hierarchy_status["inverters"]["count"] = self.cur.fetchone()[0]
+            self.cur.execute("SELECT COUNT(DISTINCT inverter_id) FROM energy_samples")
+            hierarchy_status["inverters"]["with_data"] = self.cur.fetchone()[0]
+            
+            # Check battery packs
+            self.cur.execute("SELECT COUNT(*) FROM battery_packs")
+            hierarchy_status["battery_packs"]["count"] = self.cur.fetchone()[0]
+            self.cur.execute("SELECT COUNT(DISTINCT bank_id) FROM battery_bank_samples")
+            hierarchy_status["battery_packs"]["with_bank_data"] = self.cur.fetchone()[0]
+            self.cur.execute("SELECT COUNT(DISTINCT bank_id) FROM battery_unit_samples")
+            hierarchy_status["battery_packs"]["with_unit_data"] = self.cur.fetchone()[0]
+            self.cur.execute("SELECT COUNT(DISTINCT bank_id) FROM battery_cell_samples")
+            hierarchy_status["battery_packs"]["with_cell_data"] = self.cur.fetchone()[0]
+            
+            # Check batteries (individual battery units)
+            self.cur.execute("SELECT COUNT(*) FROM batteries")
+            hierarchy_status["batteries"]["count"] = self.cur.fetchone()[0]
+            
+            # Check cells (battery cell definitions)
+            self.cur.execute("SELECT COUNT(*) FROM battery_cells")
+            hierarchy_status["cells"]["count"] = self.cur.fetchone()[0]
+            
+            # Determine overall status
+            status = "ok"
+            if hierarchy_status["inverters"]["count"] > hierarchy_status["inverters"]["with_data"]:
+                status = "warning"
+            if hierarchy_status["battery_packs"]["count"] > hierarchy_status["battery_packs"]["with_bank_data"]:
+                status = "warning"
+            
+            return {
+                "status": status,
+                "hierarchy": hierarchy_status,
+            }
+        except sqlite3.OperationalError as e:
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+    
     def check_recent_data(self, hours: int = 24) -> Dict[str, Any]:
         """Check if data exists in the last N hours."""
         cutoff_time = datetime.now() - timedelta(hours=hours)
