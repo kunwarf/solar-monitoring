@@ -97,6 +97,8 @@ class SolarApp:
         # Initialize energy calculator
         from solarhub.energy_calculator import EnergyCalculator
         self.energy_calculator = EnergyCalculator(self.logger.path)
+        # Store EnergyCalculator class for use in other methods
+        self._EnergyCalculator = EnergyCalculator
         
         # Initialize command queue manager
         telemetry_interval = getattr(cfg.polling, 'interval_secs', 10.0)
