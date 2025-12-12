@@ -50,14 +50,14 @@ export const telemetryService = {
       { ttl: CACHE_TTL.TELEMETRY, key: 'telemetry:home' }
     )
     
-    if (!response.home) {
-      throw new Error('No home telemetry data available')
+    if (!response.system) {
+      throw new Error('No system telemetry data available')
     }
     
-    const telemetry = normalizeHomeTelemetry(response.home)
+    const telemetry = normalizeHomeTelemetry(response.system)
     
     // Update hierarchy object (use system_id from response or default to 'system')
-    const systemId = (response.home as any).system_id || 'system'
+    const systemId = (response.system as any).system_id || 'system'
     const manager = HierarchyManager.getInstance()
     manager.updateSystemTelemetry(systemId, telemetry)
     

@@ -36,7 +36,7 @@ export interface BackendTelemetryData {
 
 export interface BackendHomeTelemetryResponse {
   status: string
-  home: BackendHomeTelemetry
+  system: BackendHomeTelemetry
 }
 
 export interface BackendHomeTelemetry {

@@ -34,9 +34,9 @@ export const NewDashboardPage: React.FC = () => {
         } else {
           // Home-level: use home aggregation endpoint
           response = await api.get('/api/home/now')
-          if (response?.home) {
-            // Map home telemetry to match expected format
-            const home = response.home
+          if (response?.system) {
+            // Map system telemetry to match expected format
+            const home = response.system
             if (isMounted) {
               setTelemetry({
                 ts: home.ts,

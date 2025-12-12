@@ -1639,7 +1639,7 @@ def create_api(solar_app) -> FastAPI:
                 # Fallback: return minimal response without hierarchy data
                 return {
                     "status": "ok",
-                    "home": {
+                    "system": {
                         "home_id": "home",
                         "ts": home_dict.get("ts", ""),
                         "total_pv_power_w": home_dict.get("total_pv_power_w"),
@@ -1657,7 +1657,7 @@ def create_api(solar_app) -> FastAPI:
             
             return {
                 "status": "ok",
-                "home": home_dict  # Frontend expects "home" key
+                "system": home_dict  # Frontend expects "system" key
             }
         except Exception as e:
             log.error(f"Error in /api/home/now: {e}", exc_info=True)
