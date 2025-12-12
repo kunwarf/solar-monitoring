@@ -35,9 +35,21 @@ class AdapterBase:
     def from_db_row(cls, row: Dict[str, Any]) -> 'AdapterBase':
         """Create AdapterBase from database row."""
         # Handle None values from database (NULL columns)
+        # Convert row to dict if it's a sqlite3.Row object
+        if hasattr(row, 'keys'):
+            row = dict(row)
+        
         config_schema_str = row.get('config_schema') or '{}'
         supported_transports_str = row.get('supported_transports') or '[]'
         default_config_str = row.get('default_config') or '{}'
+        
+        # Ensure we have strings, not None
+        if config_schema_str is None:
+            config_schema_str = '{}'
+        if supported_transports_str is None:
+            supported_transports_str = '[]'
+        if default_config_str is None:
+            default_config_str = '{}'
         
         config_schema = json.loads(config_schema_str)
         supported_transports = json.loads(supported_transports_str)
@@ -106,7 +118,16 @@ class AdapterInstance:
     def from_db_row(cls, row: Dict[str, Any]) -> 'AdapterInstance':
         """Create AdapterInstance from database row."""
         # Handle None values from database (NULL columns)
+        # Convert row to dict if it's a sqlite3.Row object
+        if hasattr(row, 'keys'):
+            row = dict(row)
+        
         config_json_str = row.get('config_json') or '{}'
+        
+        # Ensure we have a string, not None
+        if config_json_str is None:
+            config_json_str = '{}'
+        
         config_json = json.loads(config_json_str)
         
         return cls(
