@@ -182,6 +182,13 @@ class DataLogger:
             )
         """)
         log.info("Created/verified configuration table")
+        
+        # Initialize enable_statistics_backfill flag to 'false' if not exists (disabled by default)
+        cur.execute("""
+            INSERT OR IGNORE INTO configuration (key, value, updated_at, source)
+            VALUES ('enable_statistics_backfill', 'false', datetime('now'), 'system')
+        """)
+        con.commit()
 
         # Battery logging tables
         cur.execute("""
