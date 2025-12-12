@@ -1089,6 +1089,26 @@ def create_api(solar_app) -> FastAPI:
                     # Legacy: single battery bank
                     battery_bank_telemetry["legacy"] = solar_app.battery_last
             
+            # Get meter energy data from database if available
+            meter_energy_data = {}
+            if solar_app.logger:
+                try:
+                    # Get daily energy summaries for meters
+                    from solarhub.timezone_utils import now_configured
+                    today = now_configured().date().isoformat()
+                    for meter_id in meter_configs.keys():
+                        try:
+                            daily_summary = solar_app.logger.get_meter_daily_summary(meter_id, today, today)
+                            if daily_summary:
+                                meter_energy_data[meter_id] = {
+                                    "import_energy_kwh": float(daily_summary[0].get("import_energy_kwh", 0) or 0),
+                                    "export_energy_kwh": float(daily_summary[0].get("export_energy_kwh", 0) or 0),
+                                }
+                        except Exception as e:
+                            log.debug(f"Could not get meter energy data for {meter_id}: {e}")
+                except Exception as e:
+                    log.debug(f"Error getting meter energy data: {e}")
+            
             # Aggregate home telemetry
             aggregator = ArrayAggregator()
             home_tel = aggregator.aggregate_home_telemetry(
@@ -3482,7 +3502,7 @@ def create_api(solar_app) -> FastAPI:
                             "system_id": meter.system_id,
                             "model": meter.model,
                             "serial_number": meter.serial_number,
-                            "vendor": meter.vendor,
+                            "vendor": getattr(meter, 'vendor', None),  # Meter doesn't have vendor attribute
                             "meter_type": meter.meter_type,
                             "attachment_target": meter.attachment_target
                         }
