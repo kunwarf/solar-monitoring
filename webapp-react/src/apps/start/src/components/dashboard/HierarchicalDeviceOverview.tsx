@@ -65,10 +65,8 @@ function getArrayStatus(onlineCount: number, warningCount: number, total: number
   return "warning";
 }
 
-// System Card - displays a System with Inverter Arrays and Battery Arrays as siblings
+// System Card - displays a System summary at the top (like "Main Circuit")
 function SystemCard({ system, index }: { system: System; index: number }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
   // Aggregate data for the system (sum of all inverter arrays)
   const systemAgg = system.inverterArrays.reduce(
     (acc, array) => {
@@ -95,6 +93,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
   const totalBatteryPower = batteryAggs.reduce((sum, agg) => sum + agg.totalPower, 0);
   
   const status = getArrayStatus(systemAgg.onlineCount, systemAgg.warningCount, systemAgg.inverterCount);
+  const isCharging = totalBatteryPower > 0;
 
   return (
     <motion.div
@@ -103,115 +102,95 @@ function SystemCard({ system, index }: { system: System; index: number }) {
       transition={{ delay: 0.1 * index }}
       className="rounded-lg border border-border/50 bg-card/50 overflow-hidden"
     >
-      <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-        <CollapsibleTrigger asChild>
-          <button className="w-full p-4 hover:bg-secondary/30 transition-colors">
-            {/* System Header */}
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Layers className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-semibold text-foreground truncate">{system.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {systemAgg.inverterCount} Inverter{systemAgg.inverterCount > 1 ? "s" : ""}
-                  {totalBatteryCount > 0 && ` • ${totalBatteryCount} Battery${totalBatteryCount > 1 ? " Banks" : ""}`}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground capitalize">{status}</span>
-                <div className={cn("w-2.5 h-2.5 rounded-full", statusColors[status])} />
-                {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-            </div>
-
-            {/* System Aggregated Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Sun className="w-4 h-4 text-warning" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Solar</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {systemAgg.solarPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Home className="w-4 h-4 text-success" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Load</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {systemAgg.loadPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Zap className="w-4 h-4 text-primary" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Grid</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {systemAgg.gridPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Battery className="w-4 h-4 text-cyan-400" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Battery</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {systemAgg.batteryPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </button>
-        </CollapsibleTrigger>
-
-        <CollapsibleContent>
-          <div className="px-4 pb-4 space-y-3">
-            {/* Inverter Arrays */}
-            {system.inverterArrays.map((array, arrIndex) => (
-              <div key={array.id} className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Inverters</p>
-                {array.inverters.map((inv) => (
-                  <InverterCard key={inv.id} inverter={inv} />
-                ))}
-              </div>
-            ))}
-
-            {/* Battery Arrays */}
-            {system.batteryArrays.map((batteryArray) => (
-              <div key={batteryArray.id} className="space-y-2 mb-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
-                  {batteryArray.name}
-                </p>
-                <div className="space-y-2">
-                  {batteryArray.batteries.length > 0 ? (
-                    batteryArray.batteries.map((bat) => (
-                      <BatteryCard key={bat.id} battery={bat} />
-                    ))
-                  ) : (
-                    <div className="p-3 rounded-lg border border-border/50 bg-secondary/30">
-                      <p className="text-xs text-muted-foreground">No battery data available</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+      {/* System Header - Always visible (like "Main Circuit") */}
+      <div className="p-4">
+        <div className="flex items-center gap-4 mb-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Layers className="w-5 h-5 text-primary" />
           </div>
-        </CollapsibleContent>
-      </Collapsible>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold text-foreground truncate">{system.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {system.inverterArrays.length} Inverter Array{system.inverterArrays.length > 1 ? "s" : ""}
+              {system.batteryArrays.length > 0 && ` • ${system.batteryArrays.length} Battery Array${system.batteryArrays.length > 1 ? "s" : ""}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground capitalize">{status}</span>
+            <div className={cn("w-2.5 h-2.5 rounded-full", statusColors[status])} />
+          </div>
+        </div>
+
+        {/* System Aggregated Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
+            <Sun className="w-4 h-4 text-warning" />
+            <div className="min-w-0 text-left">
+              <p className="text-[10px] text-muted-foreground">Solar</p>
+              <p className="font-mono text-sm font-medium text-foreground">
+                {systemAgg.solarPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
+            <Home className="w-4 h-4 text-success" />
+            <div className="min-w-0 text-left">
+              <p className="text-[10px] text-muted-foreground">Load</p>
+              <p className="font-mono text-sm font-medium text-foreground">
+                {systemAgg.loadPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
+            <Zap className="w-4 h-4 text-primary" />
+            <div className="min-w-0 text-left">
+              <p className="text-[10px] text-muted-foreground">Grid</p>
+              <p className="font-mono text-sm font-medium text-foreground">
+                {systemAgg.gridPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
+            <Battery className="w-4 h-4 text-cyan-400" />
+            <div className="min-w-0 text-left">
+              <p className="text-[10px] text-muted-foreground">Avg SOC</p>
+              <p className="font-mono text-sm font-medium text-foreground">
+                {avgBatterySoc.toFixed(0)}<span className="text-xs text-muted-foreground ml-0.5">%</span>
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Charging indicator */}
+        {totalBatteryPower !== 0 && (
+          <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-background/50">
+            {isCharging ? <ArrowDown className="w-4 h-4 text-success" /> : <ArrowUp className="w-4 h-4 text-warning" />}
+            <div className="min-w-0 text-left">
+              <p className="text-[10px] text-muted-foreground">{isCharging ? "Charging" : "Discharging"}</p>
+              <p className="font-mono text-sm font-medium text-foreground">
+                {Math.abs(totalBatteryPower).toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Inverter Arrays - Each as separate expandable card */}
+      <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-4">
+        {system.inverterArrays.map((array, arrIndex) => (
+          <InverterArrayCard key={array.id} array={array} index={arrIndex} />
+        ))}
+
+        {/* Battery Arrays - Each as separate expandable card */}
+        {system.batteryArrays.map((batteryArray, batIndex) => (
+          <BatteryArrayCard key={batteryArray.id} batteryArray={batteryArray} index={batIndex} />
+        ))}
+      </div>
     </motion.div>
   );
 }
 
-// Inverter Array Card with aggregated data (now used within System)
-// Note: This component is kept for potential future use but is not currently used
-// Battery Arrays are now siblings under System, not nested here
+// Inverter Array Card with aggregated data (expandable, shows nested inverters)
 function InverterArrayCard({ array, index }: { array: InverterArray; index: number }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const agg = getInverterArrayAggregates(array);
@@ -235,7 +214,7 @@ function InverterArrayCard({ array, index }: { array: InverterArray; index: numb
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold text-foreground truncate">{array.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {agg.inverterCount} Inverter{agg.inverterCount > 1 ? "s" : ""}
+                  {agg.inverterCount} Inverter{agg.inverterCount > 1 ? "s" : ""} • {agg.solarPower.toFixed(1)} kW
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -248,44 +227,61 @@ function InverterArrayCard({ array, index }: { array: InverterArray; index: numb
                 )}
               </div>
             </div>
+          </button>
+        </CollapsibleTrigger>
 
-            {/* Array Aggregated Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Sun className="w-4 h-4 text-warning" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Solar</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {agg.solarPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
+        <CollapsibleContent>
+          <div className="px-4 pb-4 space-y-3">
+            {/* Individual Inverters */}
+            {array.inverters.map((inv) => (
+              <InverterCard key={inv.id} inverter={inv} />
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </motion.div>
+  );
+}
+
+// Battery Array Card with aggregated data (expandable, shows nested batteries)
+function BatteryArrayCard({ batteryArray, index }: { batteryArray: BatteryArray; index: number }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const agg = getBatteryArrayAggregates(batteryArray);
+  const status = getArrayStatus(
+    batteryArray.batteries.filter(b => b.status === 'online').length,
+    batteryArray.batteries.filter(b => b.status === 'warning').length,
+    batteryArray.batteries.length
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1 * index }}
+      className="rounded-lg border border-border/50 bg-card/50 overflow-hidden"
+    >
+      <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full p-4 hover:bg-secondary/30 transition-colors">
+            {/* Battery Array Header */}
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Battery className="w-5 h-5 text-primary" />
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Home className="w-4 h-4 text-success" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Load</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {agg.loadPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-sm font-semibold text-foreground truncate">{batteryArray.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {agg.batteryCount} Bank{agg.batteryCount > 1 ? "s" : ""} • {agg.avgSoc.toFixed(0)}% SOC
+                </p>
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Zap className="w-4 h-4 text-primary" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Grid</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {agg.gridPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                <Battery className="w-4 h-4 text-cyan-400" />
-                <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-muted-foreground">Battery</p>
-                  <p className="font-mono text-sm font-medium text-foreground">
-                    {agg.batteryPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground capitalize">{status}</span>
+                <div className={cn("w-2.5 h-2.5 rounded-full", statusColors[status])} />
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                )}
               </div>
             </div>
           </button>
@@ -293,15 +289,16 @@ function InverterArrayCard({ array, index }: { array: InverterArray; index: numb
 
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-3">
-            {/* Individual Inverters */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Inverters</p>
-              {array.inverters.map((inv) => (
-                <InverterCard key={inv.id} inverter={inv} />
-              ))}
-            </div>
-
-            {/* Note: Battery Arrays are now siblings under System, not nested here */}
+            {/* Individual Batteries */}
+            {batteryArray.batteries.length > 0 ? (
+              batteryArray.batteries.map((bat) => (
+                <BatteryCard key={bat.id} battery={bat} />
+              ))
+            ) : (
+              <div className="p-3 rounded-lg border border-border/50 bg-secondary/30">
+                <p className="text-xs text-muted-foreground">No battery data available</p>
+              </div>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
