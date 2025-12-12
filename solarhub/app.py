@@ -125,6 +125,12 @@ class SolarApp:
         
         # Load hierarchy from database
         try:
+            # First validate hierarchy integrity
+            from solarhub.hierarchy.validator import validate_and_raise
+            validate_and_raise(self.logger.path)
+            log.info("Hierarchy validation passed")
+            
+            # Then load hierarchy
             from solarhub.hierarchy.loader import HierarchyLoader
             loader = HierarchyLoader(self.logger.path)
             self.hierarchy_systems = loader.load_hierarchy()
