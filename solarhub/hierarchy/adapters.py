@@ -34,9 +34,14 @@ class AdapterBase:
     @classmethod
     def from_db_row(cls, row: Dict[str, Any]) -> 'AdapterBase':
         """Create AdapterBase from database row."""
-        config_schema = json.loads(row.get('config_schema', '{}'))
-        supported_transports = json.loads(row.get('supported_transports', '[]'))
-        default_config = json.loads(row.get('default_config', '{}'))
+        # Handle None values from database (NULL columns)
+        config_schema_str = row.get('config_schema') or '{}'
+        supported_transports_str = row.get('supported_transports') or '[]'
+        default_config_str = row.get('default_config') or '{}'
+        
+        config_schema = json.loads(config_schema_str)
+        supported_transports = json.loads(supported_transports_str)
+        default_config = json.loads(default_config_str)
         
         return cls(
             adapter_type=row['adapter_type'],
@@ -100,7 +105,9 @@ class AdapterInstance:
     @classmethod
     def from_db_row(cls, row: Dict[str, Any]) -> 'AdapterInstance':
         """Create AdapterInstance from database row."""
-        config_json = json.loads(row.get('config_json', '{}'))
+        # Handle None values from database (NULL columns)
+        config_json_str = row.get('config_json') or '{}'
+        config_json = json.loads(config_json_str)
         
         return cls(
             adapter_id=row['adapter_id'],
