@@ -42,7 +42,8 @@ class FailoverBatteryAdapter(BatteryAdapter):
         super().__init__(bank_cfg)
         
         self.adapter_factory = adapter_factory
-        self.adapters: List[BatteryAdapter] = []
+        self.adapter_configs: List[BatteryAdapterConfigWithPriority] = []  # Store configs, not instances
+        self.adapters: List[Optional[BatteryAdapter]] = []  # Lazy-initialized adapter instances
         self.current_adapter: Optional[BatteryAdapter] = None
         self.current_adapter_index: int = -1
         self.failover_count: int = 0
@@ -60,58 +61,99 @@ class FailoverBatteryAdapter(BatteryAdapter):
         if not sorted_adapters:
             raise ValueError("No enabled adapters found in adapters list")
         
-        # Create adapter instances
+        # Store adapter configurations (don't create instances yet)
         for adapter_cfg_with_priority in sorted_adapters:
             adapter_cfg = adapter_cfg_with_priority.adapter
             if adapter_cfg.type not in adapter_factory:
                 log.warning(f"Skipping adapter type '{adapter_cfg.type}' - not found in factory")
                 continue
             
+            self.adapter_configs.append(adapter_cfg_with_priority)
+            self.adapters.append(None)  # Placeholder - will be created lazily
+        
+        if not self.adapter_configs:
+            raise ValueError("No valid adapter configurations found")
+        
+        log.info(f"FailoverBatteryAdapter initialized with {len(self.adapter_configs)} adapter configuration(s) (lazy initialization)")
+    
+    def _create_adapter_instance(self, idx: int) -> Optional[BatteryAdapter]:
+        """Create an adapter instance lazily (only when needed)."""
+        if idx >= len(self.adapter_configs):
+            return None
+        
+        # If already created, return it
+        if self.adapters[idx] is not None:
+            return self.adapters[idx]
+        
+        # Create adapter instance
+        adapter_cfg_with_priority = self.adapter_configs[idx]
+        adapter_cfg = adapter_cfg_with_priority.adapter
+        
+        try:
             # Create a temporary BatteryBankConfig for this adapter
             temp_bank_cfg = BatteryBankConfig(
-                id=bank_cfg.id,
-                name=bank_cfg.name,
+                id=self.bank_cfg.id,
+                name=self.bank_cfg.name,
                 adapter=adapter_cfg
             )
             
-            try:
-                adapter = adapter_factory[adapter_cfg.type](temp_bank_cfg)
-                self.adapters.append(adapter)
-                log.info(f"Created failover adapter: {adapter_cfg.type} (priority: {adapter_cfg_with_priority.priority})")
-            except Exception as e:
-                log.error(f"Failed to create adapter {adapter_cfg.type}: {e}")
-        
-        if not self.adapters:
-            raise ValueError("No valid adapters could be created")
-        
-        log.info(f"FailoverBatteryAdapter initialized with {len(self.adapters)} adapter(s)")
+            adapter = self.adapter_factory[adapter_cfg.type](temp_bank_cfg)
+            self.adapters[idx] = adapter
+            log.info(f"Created adapter instance: {adapter_cfg.type} (priority: {adapter_cfg_with_priority.priority})")
+            return adapter
+        except Exception as e:
+            log.error(f"Failed to create adapter {adapter_cfg.type}: {e}")
+            return None
     
     async def connect(self):
         """Connect to the primary adapter, with automatic failover to secondary if needed."""
-        # Try to connect to adapters in priority order
-        for idx, adapter in enumerate(self.adapters):
+        # Try to connect to adapters in priority order (lazy initialization)
+        for idx in range(len(self.adapter_configs)):
+            adapter_cfg_with_priority = self.adapter_configs[idx]
+            adapter_cfg = adapter_cfg_with_priority.adapter
+            
+            # Create adapter instance only when needed
+            adapter = self._create_adapter_instance(idx)
+            if adapter is None:
+                log.warning(f"Failed to create adapter {idx+1}/{len(self.adapter_configs)} ({adapter_cfg.type})")
+                if idx < len(self.adapter_configs) - 1:
+                    log.info(f"Trying next adapter in failover chain...")
+                    continue
+                else:
+                    log.error(f"All adapters failed to create. Last adapter: {adapter_cfg.type}")
+                    raise RuntimeError(f"All {len(self.adapter_configs)} adapter(s) failed to create")
+            
             try:
-                log.info(f"Attempting to connect to adapter {idx+1}/{len(self.adapters)} (type: {adapter.bank_cfg.adapter.type})...")
+                log.info(f"Attempting to connect to adapter {idx+1}/{len(self.adapter_configs)} (type: {adapter_cfg.type}, priority: {adapter_cfg_with_priority.priority})...")
                 await adapter.connect()
                 self.current_adapter = adapter
                 self.current_adapter_index = idx
-                log.info(f"✓ Connected to primary adapter: {adapter.bank_cfg.adapter.type}")
+                log.info(f"✓ Connected to primary adapter: {adapter_cfg.type}")
                 return
             except Exception as e:
-                log.warning(f"Failed to connect to adapter {idx+1} ({adapter.bank_cfg.adapter.type}): {e}")
-                if idx < len(self.adapters) - 1:
+                log.warning(f"Failed to connect to adapter {idx+1} ({adapter_cfg.type}): {e}")
+                # Clean up failed adapter instance
+                try:
+                    await adapter.close()
+                except:
+                    pass
+                self.adapters[idx] = None
+                
+                if idx < len(self.adapter_configs) - 1:
                     log.info(f"Trying next adapter in failover chain...")
                 else:
                     log.error(f"All adapters failed to connect. Last error: {e}")
-                    raise RuntimeError(f"All {len(self.adapters)} adapter(s) failed to connect. Last error: {e}")
+                    raise RuntimeError(f"All {len(self.adapter_configs)} adapter(s) failed to connect. Last error: {e}")
     
     async def close(self):
         """Close all adapter connections."""
         for idx, adapter in enumerate(self.adapters):
-            try:
-                await adapter.close()
-            except Exception as e:
-                log.warning(f"Error closing adapter {idx+1}: {e}")
+            if adapter is not None:
+                try:
+                    await adapter.close()
+                except Exception as e:
+                    log.warning(f"Error closing adapter {idx+1}: {e}")
+                self.adapters[idx] = None  # Clear reference
         
         self.current_adapter = None
         self.current_adapter_index = -1
@@ -119,7 +161,7 @@ class FailoverBatteryAdapter(BatteryAdapter):
     
     async def _try_failover(self) -> bool:
         """Try to failover to next available adapter. Returns True if successful."""
-        if self.current_adapter_index >= len(self.adapters) - 1:
+        if self.current_adapter_index >= len(self.adapter_configs) - 1:
             # Already tried all adapters
             return False
         
@@ -130,20 +172,39 @@ class FailoverBatteryAdapter(BatteryAdapter):
             except Exception:
                 pass
         
-        # Try next adapter
-        for idx in range(self.current_adapter_index + 1, len(self.adapters)):
-            adapter = self.adapters[idx]
+        # Try next adapter (lazy initialization)
+        for idx in range(self.current_adapter_index + 1, len(self.adapter_configs)):
+            adapter_cfg_with_priority = self.adapter_configs[idx]
+            adapter_cfg = adapter_cfg_with_priority.adapter
+            
+            # Create adapter instance only when needed
+            adapter = self._create_adapter_instance(idx)
+            if adapter is None:
+                log.warning(f"Failed to create adapter {idx+1}/{len(self.adapter_configs)} ({adapter_cfg.type}) during failover")
+                if idx < len(self.adapter_configs) - 1:
+                    continue
+                else:
+                    log.error(f"All adapters exhausted during failover")
+                    return False
+            
             try:
-                log.info(f"Attempting failover to adapter {idx+1}/{len(self.adapters)} (type: {adapter.bank_cfg.adapter.type})...")
+                log.info(f"Attempting failover to adapter {idx+1}/{len(self.adapter_configs)} (type: {adapter_cfg.type}, priority: {adapter_cfg_with_priority.priority})...")
                 await adapter.connect()
                 self.current_adapter = adapter
                 self.current_adapter_index = idx
                 self.failover_count += 1
-                log.info(f"✓ Failover successful to adapter: {adapter.bank_cfg.adapter.type}")
+                log.info(f"✓ Failover successful to adapter: {adapter_cfg.type}")
                 return True
             except Exception as e:
-                log.warning(f"Failover to adapter {idx+1} ({adapter.bank_cfg.adapter.type}) failed: {e}")
-                if idx < len(self.adapters) - 1:
+                log.warning(f"Failover to adapter {idx+1} ({adapter_cfg.type}) failed: {e}")
+                # Clean up failed adapter instance
+                try:
+                    await adapter.close()
+                except:
+                    pass
+                self.adapters[idx] = None
+                
+                if idx < len(self.adapter_configs) - 1:
                     continue
                 else:
                     log.error(f"All adapters exhausted during failover")
@@ -215,6 +276,7 @@ class FailoverBatteryAdapter(BatteryAdapter):
             "adapter_type": self.current_adapter.bank_cfg.adapter.type,
             "adapter_index": self.current_adapter_index,
             "failover_count": self.failover_count,
-            "total_adapters": len(self.adapters),
+            "total_adapters": len(self.adapter_configs),
+            "initialized_adapters": sum(1 for a in self.adapters if a is not None),
         }
 
