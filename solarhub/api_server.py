@@ -1582,6 +1582,29 @@ def create_api(solar_app) -> FastAPI:
                         if "array_id" in array_data:
                             array_data["system_id"] = target_system_id
             
+            # Final serialization check - ensure everything is JSON-serializable
+            # This will catch any circular references before FastAPI tries to serialize
+            try:
+                import json
+                # Test serialization to catch any circular references
+                json.dumps(home_dict, default=str)
+            except (TypeError, ValueError) as e:
+                log.error(f"Response contains non-serializable data: {e}")
+                # Fallback: return minimal response without hierarchy data
+                return {
+                    "status": "error",
+                    "error": "Failed to serialize response data",
+                    "system": {
+                        "system_id": target_system_id,
+                        "system_name": home_dict.get("system_name", "Unknown"),
+                        "total_pv_power_w": home_dict.get("total_pv_power_w"),
+                        "total_load_power_w": home_dict.get("total_load_power_w"),
+                        "total_grid_power_w": home_dict.get("total_grid_power_w"),
+                        "total_batt_power_w": home_dict.get("total_batt_power_w"),
+                        "avg_batt_soc_pct": home_dict.get("avg_batt_soc_pct"),
+                    }
+                }
+            
             return {
                 "status": "ok",
                 "system": home_dict  # Changed from "home" to "system" to reflect hierarchy
