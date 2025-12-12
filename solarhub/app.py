@@ -291,20 +291,20 @@ class SolarApp:
                     logger=self.logger
                 )
                 # Configure discovery service from config
-                self.discovery_service.enabled = cfg.discovery.enabled
-                self.discovery_service.scan_on_startup = cfg.discovery.scan_on_startup
-                self.discovery_service.scan_interval_minutes = cfg.discovery.scan_interval_minutes
-                self.discovery_service.priority_order = cfg.discovery.priority_order
-                self.discovery_service.identification_timeout = cfg.discovery.identification_timeout
-                self.discovery_service.max_retries = cfg.discovery.max_retries
+                self.discovery_service.enabled = self.cfg.discovery.enabled
+                self.discovery_service.scan_on_startup = self.cfg.discovery.scan_on_startup
+                self.discovery_service.scan_interval_minutes = self.cfg.discovery.scan_interval_minutes
+                self.discovery_service.priority_order = self.cfg.discovery.priority_order
+                self.discovery_service.identification_timeout = self.cfg.discovery.identification_timeout
+                self.discovery_service.max_retries = self.cfg.discovery.max_retries
                 
                 self.recovery_manager = AutoRecoveryManager(
                     registry=self.device_registry,
                     discovery_service=self.discovery_service,
-                    initial_retry_minutes=cfg.discovery.initial_retry_minutes,
-                    max_retry_minutes=cfg.discovery.max_retry_minutes,
-                    backoff_multiplier=cfg.discovery.backoff_multiplier,
-                    max_failures=cfg.discovery.max_failures
+                    initial_retry_minutes=self.cfg.discovery.initial_retry_minutes,
+                    max_retry_minutes=self.cfg.discovery.max_retry_minutes,
+                    backoff_multiplier=self.cfg.discovery.backoff_multiplier,
+                    max_failures=self.cfg.discovery.max_failures
                 )
                 log.info("Device discovery and recovery services initialized")
             except Exception as e:
