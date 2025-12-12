@@ -339,13 +339,14 @@ def validate_data_migration(db_path: str) -> Tuple[bool, List[str]]:
         
         # ============= 4. VALIDATE BATTERY PACK DATA MIGRATION =============
         # Only check battery packs that have been polled (have raw data)
+        # Note: battery_bank_samples uses bank_id which maps to pack_id
         try:
-            cur.execute("SELECT DISTINCT bank_id FROM battery_samples")
+            cur.execute("SELECT DISTINCT bank_id FROM battery_bank_samples")
             polled_battery_packs = {row[0] for row in cur.fetchall()}
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
                 polled_battery_packs = set()
-                log.debug("battery_samples table does not exist yet")
+                log.debug("battery_bank_samples table does not exist yet")
             else:
                 raise
         
@@ -519,13 +520,14 @@ def validate_statistics_generation(db_path: str, days_back: int = 7) -> Tuple[bo
         
         # ============= 4. VALIDATE RECENT BATTERY PACK STATISTICS =============
         # Only check battery packs that have been polled
+        # Note: battery_bank_samples uses bank_id which maps to pack_id
         try:
-            cur.execute("SELECT DISTINCT bank_id FROM battery_samples")
+            cur.execute("SELECT DISTINCT bank_id FROM battery_bank_samples")
             polled_battery_packs = {row[0] for row in cur.fetchall()}
         except sqlite3.OperationalError as e:
             if "no such table" in str(e).lower():
                 polled_battery_packs = set()
-                log.debug("battery_samples table does not exist yet")
+                log.debug("battery_bank_samples table does not exist yet")
             else:
                 raise
         
