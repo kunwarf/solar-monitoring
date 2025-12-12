@@ -595,47 +595,71 @@ def validate_statistics_generation(db_path: str, days_back: int = 7) -> Tuple[bo
 
 
 def validate_and_raise(db_path: str, validate_data: bool = True, validate_statistics: bool = True, 
-                       statistics_days_back: int = 7) -> None:
+                       statistics_days_back: int = 7, strict_data_validation: bool = False) -> None:
     """
     Validate hierarchy, data migration, and statistics generation.
-    Raise exception if validation fails.
+    Raise exception if hierarchy validation fails.
+    Data migration and statistics validation are warnings only (non-blocking) unless strict mode is enabled.
     
     Args:
         db_path: Path to SQLite database
         validate_data: Whether to validate data migration (default: True)
         validate_statistics: Whether to validate statistics generation (default: True)
         statistics_days_back: Number of days to check for recent statistics (default: 7)
+        strict_data_validation: If True, data/statistics validation failures block startup (default: False)
         
     Raises:
-        HierarchyValidationError: If validation fails
+        HierarchyValidationError: If hierarchy structure validation fails (always strict)
     """
     all_errors = []
+    all_warnings = []
     
-    # 1. Validate hierarchy structure
+    # 1. Validate hierarchy structure (ALWAYS STRICT - must pass)
     is_valid, errors = validate_hierarchy(db_path)
     if not is_valid:
         all_errors.extend([f"Hierarchy structure: {error}" for error in errors])
+    else:
+        log.info("Hierarchy structure validation passed")
     
-    # 2. Validate data migration
+    # 2. Validate data migration (WARNINGS ONLY unless strict mode)
     if validate_data:
         is_valid, warnings = validate_data_migration(db_path)
         if not is_valid:
-            all_errors.extend([f"Data migration: {warning}" for warning in warnings])
+            if strict_data_validation:
+                all_errors.extend([f"Data migration: {warning}" for warning in warnings])
+            else:
+                all_warnings.extend([f"Data migration: {warning}" for warning in warnings])
+                log.warning(f"Data migration validation found {len(warnings)} issue(s) (non-blocking)")
         else:
-            log.info("Data migration validation passed - all devices have migrated data")
+            log.info("Data migration validation passed - all polled devices have migrated data")
     
-    # 3. Validate statistics generation
+    # 3. Validate statistics generation (WARNINGS ONLY unless strict mode)
     if validate_statistics:
         is_valid, warnings = validate_statistics_generation(db_path, days_back=statistics_days_back)
         if not is_valid:
-            all_errors.extend([f"Statistics generation: {warning}" for warning in warnings])
+            if strict_data_validation:
+                all_errors.extend([f"Statistics generation: {warning}" for warning in warnings])
+            else:
+                all_warnings.extend([f"Statistics generation: {warning}" for warning in warnings])
+                log.warning(f"Statistics validation found {len(warnings)} issue(s) (non-blocking)")
         else:
-            log.info(f"Statistics validation passed - all devices have recent statistics (last {statistics_days_back} days)")
+            log.info(f"Statistics validation passed - all polled devices have recent statistics (last {statistics_days_back} days)")
     
+    # Log warnings (non-blocking)
+    if all_warnings:
+        warning_msg = "Data/Statistics validation warnings (non-blocking):\n" + "\n".join(f"  - {warning}" for warning in all_warnings)
+        log.warning(warning_msg)
+        log.warning("These warnings indicate that aggregation/statistics generation may need to run.")
+        log.warning("Application will start, but some features may not work until data is aggregated.")
+    
+    # Raise error only for hierarchy structure issues (always strict)
     if all_errors:
-        error_msg = "Validation failed:\n" + "\n".join(f"  - {error}" for error in all_errors)
+        error_msg = "Hierarchy structure validation failed (blocking):\n" + "\n".join(f"  - {error}" for error in all_errors)
         log.error(error_msg)
         raise HierarchyValidationError(error_msg)
     
-    log.info("All validations passed successfully")
+    if not all_warnings:
+        log.info("All validations passed successfully")
+    else:
+        log.info("Hierarchy validation passed. Data/statistics validation has warnings (non-blocking).")
 
