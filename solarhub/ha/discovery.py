@@ -988,6 +988,16 @@ class HADiscoveryPublisher:
             "manufacturer": manufacturer,
         }
         
+        # Add via_device relationship if system_id is available from meter_cfg
+        # Meters can be system-level (array_id=None) or array-level
+        if meter_cfg:
+            # Try to get system_id from meter_cfg
+            if hasattr(meter_cfg, 'system_id') and meter_cfg.system_id:
+                device_info["via_device"] = f"system:{meter_cfg.system_id}"
+            elif hasattr(meter_cfg, 'array_id') and meter_cfg.array_id:
+                # Array-level meter
+                device_info["via_device"] = f"array:{meter_cfg.array_id}"
+        
         # Main meter sensors
         sensors = [
             ("grid_power_w", "Grid Power", "W", "power"),

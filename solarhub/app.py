@@ -380,6 +380,11 @@ class SolarApp:
             attachment_target=meter.attachment_target,
             adapter=adapter_config
         )
+        # Add system_id and array_id to meter_config for HA discovery via_device relationships
+        if hasattr(meter, 'system_id'):
+            meter_config.system_id = meter.system_id
+        if hasattr(meter, 'array_id'):
+            meter_config.array_id = meter.array_id
         return meter_config
     
     def _initialize_discovery_attributes(self):
