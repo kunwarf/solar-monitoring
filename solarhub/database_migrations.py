@@ -1413,12 +1413,16 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
                 """, (inverter_id, array_id, system_id, adapter_id, inverter_name, model, serial_number, vendor, phase_type))
                 log.info(f"Migrated inverter from config.yaml: {inverter_id}")
             else:
-                # Update system_id and array_id if they're NULL
+                # Update system_id, array_id, and adapter_id if they're NULL or missing
                 cur.execute("""
                     UPDATE inverters 
-                    SET system_id = ?, array_id = ?, adapter_id = COALESCE(adapter_id, ?)
-                    WHERE inverter_id = ? AND (system_id IS NULL OR array_id IS NULL)
+                    SET system_id = COALESCE(system_id, ?), 
+                        array_id = COALESCE(array_id, ?), 
+                        adapter_id = COALESCE(adapter_id, ?)
+                    WHERE inverter_id = ? AND (system_id IS NULL OR array_id IS NULL OR adapter_id IS NULL)
                 """, (system_id, array_id, adapter_id, inverter_id))
+                if cur.rowcount > 0:
+                    log.debug(f"Updated inverter {inverter_id} with missing fields")
         
         # ============= MIGRATE BATTERY ARRAYS =============
         battery_arrays_config = config_dict.get('battery_bank_arrays', [])
@@ -1684,7 +1688,24 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
         if updated > 0:
             log.info(f"Updated {updated} meters to system {system_id}")
         
-        # ============= 5. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
+        # ============= 5. BACKFILL ADAPTER_ID IN INVERTERS TABLE =============
+        # Update inverters to link to adapters based on device_id
+        cur.execute("""
+            UPDATE inverters 
+            SET adapter_id = (
+                SELECT adapter_id 
+                FROM adapters 
+                WHERE adapters.device_id = inverters.inverter_id 
+                AND adapters.device_type = 'inverter'
+                LIMIT 1
+            )
+            WHERE adapter_id IS NULL
+        """)
+        updated = cur.rowcount
+        if updated > 0:
+            log.info(f"Backfilled adapter_id for {updated} inverters from adapters table")
+        
+        # ============= 6. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
         # Get unique inverter_ids from energy_samples
         cur.execute("SELECT DISTINCT inverter_id FROM energy_samples")
         inverter_ids = [row[0] for row in cur.fetchall()]
