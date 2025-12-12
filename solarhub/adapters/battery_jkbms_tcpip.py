@@ -497,8 +497,9 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             
             # Start background listening task
             self._stop_listening = False
+            self._connect_time = time.time()
             self._listening_task = asyncio.create_task(self._listen_loop())
-            log.info(f"Started listening task for JK BMS RS485 adapter ({self.connection_type})")
+            log.info(f"Started listening task for JK BMS RS485 adapter ({self.connection_type}) - expecting {self.batteries_expected} battery/batteries")
             
         except Exception as e:
             if self.raw_conn:
@@ -557,7 +558,9 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                 # Log connection status periodically (every 30 seconds)
                 current_time = time.time()
                 if current_time - last_log_time >= 30.0:
-                    log.debug(f"JK BMS listening loop active: conn={self.conn is not None}, batteries_discovered={len(self.batteries)}/{self.batteries_expected}")
+                    log.info(f"JK BMS listening loop active: conn={self.conn is not None}, batteries_discovered={len(self.batteries)}/{self.batteries_expected}, current_battery_id={self.current_battery_id}")
+                    if len(self.batteries) == 0:
+                        log.warning(f"JK BMS: No batteries discovered yet after {int((current_time - (getattr(self, '_connect_time', current_time))) / 60)} minutes. Check RS485 connection and BMS broadcasting.")
                     last_log_time = current_time
                 
                 # Use a small timeout to avoid blocking for too long
@@ -573,9 +576,15 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                     await asyncio.sleep(0.1)
                     continue
                 
-                # Log when we receive data (throttled)
+                # Log when we receive data (throttled - only log first few times)
                 if len(chunk) > 0:
-                    log.debug(f"JK BMS received {len(chunk)} bytes of data")
+                    if not hasattr(self, '_data_received_count'):
+                        self._data_received_count = 0
+                    self._data_received_count += 1
+                    if self._data_received_count <= 5:
+                        log.info(f"JK BMS received {len(chunk)} bytes of data (total chunks received: {self._data_received_count})")
+                    elif self._data_received_count % 100 == 0:
+                        log.debug(f"JK BMS received {len(chunk)} bytes of data (total chunks: {self._data_received_count})")
                 
                 buffer += chunk
                 pos = 0
