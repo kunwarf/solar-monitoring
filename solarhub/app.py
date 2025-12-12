@@ -2972,6 +2972,7 @@ class SolarApp:
                                 log.error(f"Failed to publish discovery for cell {cidx} in battery {p}: {e}", exc_info=True)
             else:
                 log.warning("No cells_data available in battery telemetry")
+            
             # Persist basic bank stats
             try:
                 # Bank
@@ -2986,18 +2987,30 @@ class SolarApp:
                     cells_per_battery=tel.cells_per_battery,
                 )
                 # Units
-                self.logger.insert_battery_unit_samples(
-                    bank_id=tel.id,
-                    ts_iso=tel.ts,
-                    devices=tel.devices,
-                )
-                # Cells
-                if tel.cells_data:
-                    self.logger.insert_battery_cell_samples(
+                if tel.devices:
+                    self.logger.insert_battery_unit_samples(
                         bank_id=tel.id,
                         ts_iso=tel.ts,
-                        cells_data=tel.cells_data,
+                        devices=tel.devices,
                     )
+                else:
+                    log.debug(f"No devices in telemetry for {tel.id}, skipping unit samples")
+                
+                # Cells
+                if tel.cells_data and len(tel.cells_data) > 0:
+                    # Check if any entry has cells
+                    has_cells = any(entry.get('cells') and len(entry.get('cells', [])) > 0 for entry in tel.cells_data)
+                    if has_cells:
+                        self.logger.insert_battery_cell_samples(
+                            bank_id=tel.id,
+                            ts_iso=tel.ts,
+                            cells_data=tel.cells_data,
+                        )
+                        log.debug(f"Logged {sum(len(entry.get('cells', [])) for entry in tel.cells_data)} cell samples for {tel.id}")
+                    else:
+                        log.debug(f"cells_data exists for {tel.id} but no cells found in entries")
+                else:
+                    log.debug(f"No cells_data for {tel.id} (cells_data={tel.cells_data})")
             except Exception as e:
                 log.debug(f"Battery DB logging failed: {e}")
         except Exception as e:
