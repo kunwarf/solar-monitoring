@@ -1687,7 +1687,7 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
             """, (inverter_id, array_id, system_id, inverter_id))
             log.info(f"Created inverter entry from production data: {inverter_id}")
         
-        # ============= 4. LINK EXISTING SAMPLES TO SYSTEM_ID =============
+        # ============= 6. LINK EXISTING SAMPLES TO SYSTEM_ID =============
         # This is handled by backfill_system_ids, but we can also do it here for completeness
         # The backfill function will be called separately
         
