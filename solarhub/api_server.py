@@ -1415,9 +1415,23 @@ def create_api(solar_app) -> FastAPI:
                             "vendor": inverter.vendor,
                             "phase_type": inverter.phase_type,
                         }
-                        # Add telemetry if available
+                        # Add telemetry if available - ensure it's a plain dict
                         if inv_tel_dict:
-                            inverter_data["telemetry"] = inv_tel_dict
+                            try:
+                                if hasattr(inv_tel_dict, 'model_dump'):
+                                    # It's a Pydantic model, convert to dict with JSON mode
+                                    inverter_data["telemetry"] = inv_tel_dict.model_dump(mode='json', exclude_none=False)
+                                elif isinstance(inv_tel_dict, dict):
+                                    # Already a dict, create a copy to avoid references
+                                    inverter_data["telemetry"] = {k: v for k, v in inv_tel_dict.items()}
+                                else:
+                                    # Try to convert to dict using json serialization
+                                    import json
+                                    inverter_data["telemetry"] = json.loads(json.dumps(inv_tel_dict, default=str))
+                            except Exception as e:
+                                log.debug(f"Error serializing inverter telemetry for {inverter.inverter_id}: {e}")
+                                # Skip telemetry if serialization fails
+                                pass
                         inverters_list.append(inverter_data)
                     
                     # Build inverter array structure
@@ -1428,9 +1442,42 @@ def create_api(solar_app) -> FastAPI:
                         "inverters": inverters_list,
                         "attached_battery_array_id": inv_array.attached_battery_array_id,
                     }
-                    # Add array telemetry if available
+                    # Add array telemetry if available - extract only needed fields to avoid circular references
                     if array_tel:
-                        inv_array_data["telemetry"] = array_tel.model_dump() if hasattr(array_tel, 'model_dump') else array_tel
+                        try:
+                            # Extract only the fields we need, avoiding nested objects that might have circular refs
+                            if hasattr(array_tel, 'model_dump'):
+                                # Get the dict first
+                                tel_dict = array_tel.model_dump(mode='json')
+                                # Extract only safe fields (primitives and simple lists/dicts)
+                                inv_array_data["telemetry"] = {
+                                    "array_id": tel_dict.get("array_id"),
+                                    "ts": tel_dict.get("ts"),
+                                    "pv_power_w": tel_dict.get("pv_power_w"),
+                                    "load_power_w": tel_dict.get("load_power_w"),
+                                    "grid_power_w": tel_dict.get("grid_power_w"),
+                                    "batt_power_w": tel_dict.get("batt_power_w"),
+                                    "batt_soc_pct": tel_dict.get("batt_soc_pct"),
+                                    "batt_voltage_v": tel_dict.get("batt_voltage_v"),
+                                    "batt_current_a": tel_dict.get("batt_current_a"),
+                                }
+                            elif isinstance(array_tel, dict):
+                                # Extract only safe fields
+                                inv_array_data["telemetry"] = {
+                                    "array_id": array_tel.get("array_id"),
+                                    "ts": array_tel.get("ts"),
+                                    "pv_power_w": array_tel.get("pv_power_w"),
+                                    "load_power_w": array_tel.get("load_power_w"),
+                                    "grid_power_w": array_tel.get("grid_power_w"),
+                                    "batt_power_w": array_tel.get("batt_power_w"),
+                                    "batt_soc_pct": array_tel.get("batt_soc_pct"),
+                                    "batt_voltage_v": array_tel.get("batt_voltage_v"),
+                                    "batt_current_a": array_tel.get("batt_current_a"),
+                                }
+                        except Exception as e:
+                            log.debug(f"Error serializing array telemetry for {inv_array.array_id}: {e}")
+                            # Skip telemetry if serialization fails
+                            pass
                     inverter_arrays_hierarchy.append(inv_array_data)
                 
                 # Build battery arrays with nested battery packs
@@ -1455,15 +1502,22 @@ def create_api(solar_app) -> FastAPI:
                             "max_charge_kw": pack.max_charge_kw,
                             "max_discharge_kw": pack.max_discharge_kw,
                         }
-                        # Add telemetry if available
+                        # Add telemetry if available - ensure all values are JSON-serializable
                         if pack_tel:
+                            # Extract values safely, handling both objects and dicts
+                            soc = getattr(pack_tel, 'soc', None) if hasattr(pack_tel, 'soc') else (pack_tel.get('soc') if isinstance(pack_tel, dict) else None)
+                            voltage = getattr(pack_tel, 'voltage', None) if hasattr(pack_tel, 'voltage') else (pack_tel.get('voltage') if isinstance(pack_tel, dict) else None)
+                            current = getattr(pack_tel, 'current', None) if hasattr(pack_tel, 'current') else (pack_tel.get('current') if isinstance(pack_tel, dict) else None)
+                            temperature = getattr(pack_tel, 'temperature', None) if hasattr(pack_tel, 'temperature') else (pack_tel.get('temperature') if isinstance(pack_tel, dict) else None)
+                            ts = getattr(pack_tel, 'ts', None) if hasattr(pack_tel, 'ts') else (pack_tel.get('ts') if isinstance(pack_tel, dict) else None)
+                            
                             pack_data["telemetry"] = {
-                                "soc": pack_tel.soc,
-                                "voltage": pack_tel.voltage,
-                                "current": pack_tel.current,
-                                "power": pack_tel.voltage * pack_tel.current if pack_tel.voltage and pack_tel.current else None,
-                                "temperature": pack_tel.temperature,
-                                "ts": pack_tel.ts,
+                                "soc": float(soc) if soc is not None else None,
+                                "voltage": float(voltage) if voltage is not None else None,
+                                "current": float(current) if current is not None else None,
+                                "power": float(voltage * current) if voltage is not None and current is not None else None,
+                                "temperature": float(temperature) if temperature is not None else None,
+                                "ts": str(ts) if ts is not None else None,
                             }
                         battery_packs_list.append(pack_data)
                     
