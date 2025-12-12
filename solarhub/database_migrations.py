@@ -1336,10 +1336,14 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
         ]
         
         for adapter_type, device_category, name, description in adapter_types:
-            cur.execute("""
-                INSERT OR IGNORE INTO adapter_base (adapter_type, device_category, name, description, config_schema, supported_transports)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (adapter_type, device_category, name, description, '{}', '[]'))
+            # Check if adapter_type already exists
+            cur.execute("SELECT COUNT(*) FROM adapter_base WHERE adapter_type = ?", (adapter_type,))
+            if cur.fetchone()[0] == 0:
+                cur.execute("""
+                    INSERT INTO adapter_base (adapter_type, device_category, name, description, config_schema, supported_transports)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (adapter_type, device_category, name, description, '{}', '[]'))
+                log.debug(f"Added adapter_base entry: {adapter_type}")
         log.info("Populated adapter_base table")
         
         # ============= MIGRATE ARRAYS =============
@@ -1360,9 +1364,12 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
                 """, (array_id, system_id, array_name))
                 log.info(f"Migrated array from config.yaml: {array_id}")
             else:
-                # Update system_id if it's NULL
-                cur.execute("UPDATE arrays SET system_id = ? WHERE array_id = ? AND system_id IS NULL", 
-                          (system_id, array_id))
+                # Update system_id and name if needed
+                cur.execute("""
+                    UPDATE arrays 
+                    SET system_id = COALESCE(system_id, ?), name = COALESCE(name, ?)
+                    WHERE array_id = ? AND (system_id IS NULL OR name IS NULL OR name = '')
+                """, (system_id, array_name, array_id))
         
         # ============= MIGRATE INVERTERS =============
         inverters_config = config_dict.get('inverters', [])
