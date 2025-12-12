@@ -1967,6 +1967,7 @@ class SolarApp:
     async def _execute_energy_calculator(self, hour_start: datetime = None):
         """Execute energy calculator for all inverters and arrays to process the previous hour's data."""
         from solarhub.timezone_utils import now_configured
+        from solarhub.energy_calculator import EnergyCalculator
         
         # Calculate the previous hour's start time if not provided
         if hour_start is None:
