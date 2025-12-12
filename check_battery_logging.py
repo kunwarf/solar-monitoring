@@ -87,17 +87,28 @@ def check_battery_logging(db_path: str):
         recent_count, banks, units, cells = cur.fetchone()
         print(f"   Samples in last hour: {recent_count} (from {banks} bank(s), {units} unit(s), {cells} unique cells)")
         
-        # List cells by bank and unit
-        cur.execute("""
-            SELECT bank_id, power, COUNT(DISTINCT cell) as cell_count, COUNT(*) as sample_count, MAX(ts) as latest
-            FROM battery_cell_samples 
-            GROUP BY bank_id, power 
-            ORDER BY bank_id, power
-        """)
-        print("   Cells by bank/unit:")
-        for row in cur.fetchall():
-            bank_id, power, cell_count, samples, latest_ts = row
-            print(f"     - Bank: {bank_id}, Unit: {power}, Cells: {cell_count}, Samples: {samples}, Latest: {latest_ts}")
+        # List cells by bank and unit (with error handling for encoding issues)
+        try:
+            cur.execute("""
+                SELECT bank_id, power, COUNT(DISTINCT cell) as cell_count, COUNT(*) as sample_count, MAX(ts) as latest
+                FROM battery_cell_samples 
+                GROUP BY bank_id, power 
+                ORDER BY bank_id, power
+            """)
+            print("   Cells by bank/unit:")
+            for row in cur.fetchall():
+                try:
+                    bank_id, power, cell_count, samples, latest_ts = row
+                    # Handle potential encoding issues
+                    if isinstance(bank_id, bytes):
+                        bank_id = bank_id.decode('utf-8', errors='replace')
+                    if isinstance(latest_ts, bytes):
+                        latest_ts = latest_ts.decode('utf-8', errors='replace')
+                    print(f"     - Bank: {bank_id}, Unit: {power}, Cells: {cell_count}, Samples: {samples}, Latest: {latest_ts}")
+                except Exception as e:
+                    print(f"     - Error decoding row: {e}")
+        except Exception as e:
+            print(f"   ERROR: Could not query cells by bank/unit: {e}")
         
         # Show sample cell data (with error handling for encoding issues)
         try:
