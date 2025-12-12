@@ -2748,7 +2748,7 @@ class SolarApp:
                 except (OSError, AttributeError):
                     is_connected = False
             # For failover adapters, also try check_connectivity method
-            elif hasattr(adapter, 'check_connectivity'):
+            if not is_connected and hasattr(adapter, 'check_connectivity'):
                 try:
                     is_connected = await adapter.check_connectivity()
                 except Exception:

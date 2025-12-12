@@ -498,6 +498,7 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             # Start background listening task
             self._stop_listening = False
             self._listening_task = asyncio.create_task(self._listen_loop())
+            log.info(f"Started listening task for JK BMS RS485 adapter ({self.connection_type})")
             
         except Exception as e:
             if self.raw_conn:
@@ -545,12 +546,19 @@ class JKBMSTcpipAdapter(BatteryAdapter):
     async def _listen_loop(self):
         """Background task that continuously listens and parses frames."""
         buffer = b""
+        last_log_time = 0
         
         while not self._stop_listening:
             try:
                 if not self.conn:
                     await asyncio.sleep(0.1)
                     continue
+                
+                # Log connection status periodically (every 30 seconds)
+                current_time = time.time()
+                if current_time - last_log_time >= 30.0:
+                    log.debug(f"JK BMS listening loop active: conn={self.conn is not None}, batteries_discovered={len(self.batteries)}/{self.batteries_expected}")
+                    last_log_time = current_time
                 
                 # Use a small timeout to avoid blocking for too long
                 # This allows other tasks to run
@@ -564,6 +572,10 @@ class JKBMSTcpipAdapter(BatteryAdapter):
                 if not chunk:
                     await asyncio.sleep(0.1)
                     continue
+                
+                # Log when we receive data (throttled)
+                if len(chunk) > 0:
+                    log.debug(f"JK BMS received {len(chunk)} bytes of data")
                 
                 buffer += chunk
                 pos = 0
