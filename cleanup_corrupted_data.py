@@ -51,8 +51,61 @@ def is_valid_cell(cell: Any) -> bool:
     except (ValueError, TypeError):
         return False
 
-def identify_corrupted_rows(db_path: str) -> Dict[str, Any]:
+def identify_corrupted_rows_fast(db_path: str) -> Dict[str, Any]:
+    """Fast identification using SQL queries (may miss some encoding errors)."""
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    
+    # Get total count
+    cur.execute("SELECT COUNT(*) FROM battery_cell_samples")
+    total_count = cur.fetchone()[0]
+    
+    corrupted_rowids = []
+    
+    print("Fast scan: Identifying corrupted rows using SQL queries...")
+    print(f"Total rows: {total_count:,}")
+    
+    # Find rows with invalid power values (outside 1-100 range)
+    try:
+        cur.execute("""
+            SELECT rowid FROM battery_cell_samples 
+            WHERE power IS NULL OR power < 1 OR power > 100
+        """)
+        invalid_power = [row[0] for row in cur.fetchall()]
+        corrupted_rowids.extend(invalid_power)
+        print(f"  Found {len(invalid_power):,} rows with invalid power values")
+    except Exception as e:
+        print(f"  Error checking power values: {e}")
+    
+    # Find rows with invalid cell values (outside 1-100 range)
+    try:
+        cur.execute("""
+            SELECT rowid FROM battery_cell_samples 
+            WHERE cell IS NULL OR cell < 1 OR cell > 100
+        """)
+        invalid_cell = [row[0] for row in cur.fetchall()]
+        corrupted_rowids.extend(invalid_cell)
+        print(f"  Found {len(invalid_cell):,} rows with invalid cell values")
+    except Exception as e:
+        print(f"  Error checking cell values: {e}")
+    
+    # Remove duplicates
+    corrupted_rowids = list(set(corrupted_rowids))
+    
+    conn.close()
+    
+    return {
+        "total_rows": total_count,
+        "corrupted_rowids": corrupted_rowids,
+        "corrupted_count": len(corrupted_rowids),
+        "method": "fast_sql"
+    }
+
+def identify_corrupted_rows(db_path: str, use_fast: bool = False) -> Dict[str, Any]:
     """Identify corrupted rows in battery_cell_samples table."""
+    if use_fast:
+        return identify_corrupted_rows_fast(db_path)
+    
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     
@@ -65,8 +118,9 @@ def identify_corrupted_rows(db_path: str) -> Dict[str, Any]:
     encoding_errors = 0
     
     print("Scanning battery_cell_samples table for corrupted data...")
-    print(f"Total rows: {total_count}")
+    print(f"Total rows: {total_count:,}")
     print("This may take a while for large tables...")
+    print("(Use --fast for a quicker SQL-based scan, but it may miss encoding errors)")
     
     # Use rowid to iterate, checking each row individually to handle encoding errors
     # Get min and max rowid first
@@ -245,7 +299,7 @@ def main():
     print()
     
     # Identify corrupted rows
-    result = identify_corrupted_rows(args.db_path)
+    result = identify_corrupted_rows(args.db_path, use_fast=args.fast)
     
     print(f"\nResults:")
     print(f"  Total rows: {result['total_rows']}")
