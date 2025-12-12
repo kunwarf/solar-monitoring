@@ -70,15 +70,17 @@ class BaseArray(ABC):
         created_at: Optional[str] = None,
         updated_at: Optional[str] = None
     ):
-        self.array_id = array_id
-        self.name = name
-        self.system_id = system_id
-        self.created_at = created_at or datetime.now().isoformat()
-        self.updated_at = updated_at or datetime.now().isoformat()
+        # Use object.__setattr__ to set attributes directly, bypassing any property setters
+        # This is safe during __init__ when the object is being constructed
+        object.__setattr__(self, 'array_id', array_id)
+        object.__setattr__(self, 'name', name)
+        object.__setattr__(self, 'system_id', system_id)
+        object.__setattr__(self, 'created_at', created_at or datetime.now().isoformat())
+        object.__setattr__(self, 'updated_at', updated_at or datetime.now().isoformat())
         
         # Aggregated telemetry cache
-        self._telemetry: Optional[Dict[str, Any]] = None
-        self._telemetry_timestamp: Optional[datetime] = None
+        object.__setattr__(self, '_telemetry', None)
+        object.__setattr__(self, '_telemetry_timestamp', None)
     
     @property
     def id(self) -> str:
