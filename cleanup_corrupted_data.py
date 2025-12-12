@@ -302,11 +302,14 @@ def main():
     result = identify_corrupted_rows(args.db_path, use_fast=args.fast)
     
     print(f"\nResults:")
-    print(f"  Total rows: {result['total_rows']}")
-    print(f"  Valid rows: {result['valid_rows']}")
-    print(f"  Corrupted rows: {result['corrupted_count']}")
+    print(f"  Total rows: {result['total_rows']:,}")
+    if 'valid_rows' in result:
+        print(f"  Valid rows: {result['valid_rows']:,}")
+    print(f"  Corrupted rows: {result['corrupted_count']:,}")
     if 'encoding_errors' in result:
-        print(f"  Encoding errors: {result['encoding_errors']}")
+        print(f"  Encoding errors: {result['encoding_errors']:,}")
+    if result.get('method') == 'fast_sql':
+        print(f"  Scan method: Fast SQL-based (may miss encoding errors)")
     
     if 'error' in result:
         print(f"\n✗ Error during scan: {result['error']}")
@@ -316,18 +319,19 @@ def main():
         print("\n✓ No corrupted data found!")
         return 0
     
-    # Group by issue type
-    issue_types = {}
-    for row in result['corrupted_rows']:
-        for issue in row['issues']:
-            issue_type = issue.split(':')[0]
-            if issue_type not in issue_types:
-                issue_types[issue_type] = []
-            issue_types[issue_type].append(row['rowid'])
-    
-    print(f"\nCorruption by type:")
-    for issue_type, rowids in issue_types.items():
-        print(f"  {issue_type}: {len(rowids)} rows")
+    # Group by issue type (only for detailed scan)
+    if 'corrupted_rows' in result and result['corrupted_rows']:
+        issue_types = {}
+        for row in result['corrupted_rows']:
+            for issue in row.get('issues', []):
+                issue_type = issue.split(':')[0]
+                if issue_type not in issue_types:
+                    issue_types[issue_type] = []
+                issue_types[issue_type].append(row['rowid'])
+        
+        print(f"\nCorruption by type:")
+        for issue_type, rowids in issue_types.items():
+            print(f"  {issue_type}: {len(rowids):,} rows")
     
     # Show sample corrupted rows
     print(f"\nSample corrupted rows (first 10):")
