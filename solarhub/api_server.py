@@ -1377,7 +1377,33 @@ def create_api(solar_app) -> FastAPI:
             except Exception as e:
                 log.error(f"API /api/home/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
             
-            home_dict = home_tel.model_dump()
+            # Convert home_tel to dict, ensuring no circular references
+            # Use mode='json' to ensure all nested objects are properly serialized
+            try:
+                if hasattr(home_tel, 'model_dump'):
+                    home_dict = home_tel.model_dump(mode='json', exclude_none=False)
+                elif hasattr(home_tel, 'dict'):
+                    # Pydantic v1 fallback
+                    home_dict = home_tel.dict()
+                else:
+                    import json
+                    home_dict = json.loads(json.dumps(home_tel, default=str))
+            except Exception as e:
+                log.warning(f"Error converting home_tel to dict: {e}, using fallback")
+                # Fallback: manually extract fields
+                home_dict = {
+                    "home_id": getattr(home_tel, 'home_id', 'home'),
+                    "ts": str(getattr(home_tel, 'ts', '')),
+                    "total_pv_power_w": getattr(home_tel, 'total_pv_power_w', None),
+                    "total_load_power_w": getattr(home_tel, 'total_load_power_w', None),
+                    "total_grid_power_w": getattr(home_tel, 'total_grid_power_w', None),
+                    "total_batt_power_w": getattr(home_tel, 'total_batt_power_w', None),
+                    "avg_batt_soc_pct": getattr(home_tel, 'avg_batt_soc_pct', None),
+                    "arrays": [],
+                    "meters": [],
+                }
+            
+            # Add additional data (these are already plain dicts)
             home_dict["daily_energy"] = daily_energy
             home_dict["monthly_energy"] = monthly_energy
             home_dict["financial_metrics"] = financial_metrics
