@@ -79,12 +79,11 @@ class BatteryArray(BaseArray):
         created_at: Optional[str] = None,
         updated_at: Optional[str] = None
     ):
-        # Store battery_array_id first
-        self._battery_array_id = battery_array_id
         # Call parent with battery_array_id as array_id
+        # This will set self.array_id in the parent class
         super().__init__(battery_array_id, name, system_id, created_at, updated_at)
-        # Now set battery_array_id as an alias (it's the same as array_id)
-        self.battery_array_id = battery_array_id
+        # battery_array_id is the same as array_id, just store it for clarity
+        self.battery_array_id = self.array_id
         
         # Child devices
         self.battery_packs: List[BatteryPack] = []
@@ -95,12 +94,15 @@ class BatteryArray(BaseArray):
     @property
     def array_id(self) -> str:
         """Alias for battery_array_id for BaseArray compatibility."""
-        return self._battery_array_id
+        # Return the parent's array_id (which is set by BaseArray.__init__)
+        return super().__getattribute__('array_id')
     
     @array_id.setter
     def array_id(self, value: str):
         """Setter for array_id (also updates battery_array_id)."""
-        self._battery_array_id = value
+        # Set the parent's array_id attribute directly
+        super().__setattr__('array_id', value)
+        # Keep battery_array_id in sync
         self.battery_array_id = value
     
     def add_battery_pack(self, pack: BatteryPack):
