@@ -2725,13 +2725,28 @@ class SolarApp:
         if hasattr(adapter, 'current_adapter') and adapter.current_adapter:
             # This is a failover adapter - check the current active adapter
             current = adapter.current_adapter
+            # Check for modbus client (pytes, jkbms_passive)
             if hasattr(current, 'client') and current.client:
-                # Serial adapters (pytes, jkbms_passive, jkbms_tcpip) use is_open
+                # Serial adapters (pytes, jkbms_passive) use is_open
                 if hasattr(current.client, 'is_open'):
                     is_connected = current.client.is_open
                 # Bluetooth adapters (jkbms_ble) use is_connected
                 elif hasattr(current.client, 'is_connected'):
                     is_connected = current.client.is_connected
+            # Check for raw_conn/conn (jkbms_tcpip uses socket, not modbus client)
+            elif hasattr(current, 'raw_conn') and current.raw_conn:
+                # jkbms_tcpip uses socket connection
+                try:
+                    # Check if socket is still connected
+                    if hasattr(current.raw_conn, 'getpeername'):
+                        # TCP socket - check if we can get peer name (indicates connection)
+                        current.raw_conn.getpeername()
+                        is_connected = True
+                    else:
+                        # Serial port - check if it's open
+                        is_connected = current.raw_conn.is_open if hasattr(current.raw_conn, 'is_open') else False
+                except (OSError, AttributeError):
+                    is_connected = False
             # For failover adapters, also try check_connectivity method
             elif hasattr(adapter, 'check_connectivity'):
                 try:

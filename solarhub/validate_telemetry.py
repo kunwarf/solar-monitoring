@@ -116,7 +116,7 @@ class TelemetryValidator:
             latest_samples = {}
             for inv_id in expected_inverters:
                 self.cur.execute(
-                    "SELECT MAX(timestamp) FROM energy_samples WHERE inverter_id = ?",
+                    "SELECT MAX(ts) FROM energy_samples WHERE inverter_id = ?",
                     (inv_id,)
                 )
                 result = self.cur.fetchone()[0]
@@ -162,7 +162,7 @@ class TelemetryValidator:
             latest_samples = {}
             for pack_id in expected_packs:
                 self.cur.execute(
-                    "SELECT MAX(timestamp) FROM battery_bank_samples WHERE bank_id = ?",
+                    "SELECT MAX(ts) FROM battery_bank_samples WHERE bank_id = ?",
                     (pack_id,)
                 )
                 result = self.cur.fetchone()[0]
@@ -208,7 +208,7 @@ class TelemetryValidator:
             latest_samples = {}
             for meter_id in expected_meters:
                 self.cur.execute(
-                    "SELECT MAX(timestamp) FROM meter_samples WHERE meter_id = ?",
+                    "SELECT MAX(ts) FROM meter_samples WHERE meter_id = ?",
                     (meter_id,)
                 )
                 result = self.cur.fetchone()[0]
@@ -356,7 +356,7 @@ class TelemetryValidator:
         # Check recent inverter samples
         try:
             self.cur.execute(
-                "SELECT COUNT(*) FROM energy_samples WHERE timestamp >= ?",
+                "SELECT COUNT(*) FROM energy_samples WHERE ts >= ?",
                 (cutoff_str,)
             )
             recent_data["inverter_samples"] = self.cur.fetchone()[0]
@@ -366,7 +366,7 @@ class TelemetryValidator:
         # Check recent battery samples
         try:
             self.cur.execute(
-                "SELECT COUNT(*) FROM battery_bank_samples WHERE timestamp >= ?",
+                "SELECT COUNT(*) FROM battery_bank_samples WHERE ts >= ?",
                 (cutoff_str,)
             )
             recent_data["battery_samples"] = self.cur.fetchone()[0]
@@ -376,7 +376,7 @@ class TelemetryValidator:
         # Check recent meter samples
         try:
             self.cur.execute(
-                "SELECT COUNT(*) FROM meter_samples WHERE timestamp >= ?",
+                "SELECT COUNT(*) FROM meter_samples WHERE ts >= ?",
                 (cutoff_str,)
             )
             recent_data["meter_samples"] = self.cur.fetchone()[0]
