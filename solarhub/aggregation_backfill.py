@@ -97,7 +97,8 @@ def backfill_all_aggregated_tables(db_path: str, days_back: int = 30):
     """
     log.info(f"Starting backfill of aggregated tables for last {days_back} days")
     
-    conn = sqlite3.connect(db_path)
+    # Use timeout for database connection
+    conn = sqlite3.connect(db_path, timeout=30.0)
     cursor = conn.cursor()
     
     try:

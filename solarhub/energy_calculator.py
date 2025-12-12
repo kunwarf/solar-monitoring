@@ -7,12 +7,20 @@ using Riemann sum integration and stores the results in a dedicated energy table
 
 import sqlite3
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import pandas as pd
 from solarhub.timezone_utils import get_configured_timezone, to_configured
 
 log = logging.getLogger(__name__)
+
+# SQLite connection timeout (seconds) - allows waiting for lock to be released
+SQLITE_TIMEOUT = 30.0
+# Maximum retries for database operations
+MAX_DB_RETRIES = 3
+# Retry delay (seconds) - exponential backoff
+RETRY_DELAY_BASE = 0.1
 
 class EnergyCalculator:
     """Calculate energy from power data using Riemann sum integration."""
@@ -21,9 +29,78 @@ class EnergyCalculator:
         self.db_path = db_path
         self._init_energy_table()
     
+    def _get_db_connection(self, timeout: float = SQLITE_TIMEOUT):
+        """
+        Get a database connection with timeout.
+        
+        Args:
+            timeout: Connection timeout in seconds
+            
+        Returns:
+            sqlite3.Connection object
+        """
+        return sqlite3.connect(self.db_path, timeout=timeout)
+    
+    def _execute_with_retry(self, operation_name: str, operation_func, *args, **kwargs):
+        """
+        Execute a database operation with retry logic for handling database locks.
+        
+        Args:
+            operation_name: Name of the operation (for logging)
+            operation_func: Function to execute (should take conn as first arg)
+            *args: Additional arguments to pass to operation_func
+            **kwargs: Additional keyword arguments to pass to operation_func
+            
+        Returns:
+            Result from operation_func
+            
+        Raises:
+            sqlite3.OperationalError: If database is locked after all retries
+            Exception: Other exceptions from operation_func
+        """
+        for attempt in range(MAX_DB_RETRIES):
+            conn = None
+            try:
+                conn = self._get_db_connection()
+                result = operation_func(conn, *args, **kwargs)
+                conn.commit()
+                return result
+            except sqlite3.OperationalError as e:
+                if conn:
+                    try:
+                        conn.close()
+                    except:
+                        pass
+                if "database is locked" in str(e).lower():
+                    if attempt < MAX_DB_RETRIES - 1:
+                        retry_delay = RETRY_DELAY_BASE * (2 ** attempt)
+                        log.warning(f"Database locked for {operation_name}, retrying in {retry_delay}s (attempt {attempt + 1}/{MAX_DB_RETRIES})")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        log.error(f"Database locked after {MAX_DB_RETRIES} attempts for {operation_name}")
+                        raise
+                else:
+                    raise
+            except Exception as e:
+                if conn:
+                    try:
+                        conn.rollback()
+                        conn.close()
+                    except:
+                        pass
+                log.error(f"Failed {operation_name}: {e}", exc_info=True)
+                raise
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except:
+                        pass
+    
     def _init_energy_table(self):
         """Initialize the hourly_energy table for storing calculated energy data."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -819,10 +896,9 @@ class EnergyCalculator:
         date = hour_start_configured.strftime('%Y-%m-%d')
         hour = hour_start_configured.hour
         
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
+        # Use retry helper for database operation
+        def _store_array_energy(conn):
+            cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO array_hourly_energy 
                 (array_id, system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
@@ -848,15 +924,12 @@ class EnergyCalculator:
                 array_energy['avg_grid_power_w'],
                 array_energy['sample_count']
             ))
-            
-            conn.commit()
-            log.debug(f"Stored array hourly energy data for {array_id} at {hour_start}")
-            
-        except Exception as e:
-            log.error(f"Failed to store array hourly energy data: {e}", exc_info=True)
-            raise
-        finally:
-            conn.close()
+        
+        self._execute_with_retry(
+            f"store array hourly energy for {array_id} at {hour_start}",
+            _store_array_energy
+        )
+        log.debug(f"Stored array hourly energy data for {array_id} at {hour_start}")
     
     def calculate_and_store_system_hourly_energy(self, system_id: str, array_ids: List[str], hour_start: datetime):
         """
