@@ -945,11 +945,10 @@ class EnergyCalculator:
         date = hour_start_configured.strftime('%Y-%m-%d')
         hour = hour_start_configured.hour
         
-        # Aggregate from array_hourly_energy table
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
+        # Use retry helper for database operation
+        def _store_system_energy(conn):
+            cursor = conn.cursor()
+            
             # Get array hourly energy for this hour
             placeholders = ','.join(['?'] * len(array_ids))
             query = f"""
@@ -1005,14 +1004,11 @@ class EnergyCalculator:
                     avg_soc,
                     sample_count or 0
                 ))
-                
-                conn.commit()
                 log.debug(f"Stored system hourly energy data for {system_id} at {hour_start}")
             else:
                 log.warning(f"No array hourly energy data found for system {system_id} at {hour_start}")
-                
-        except Exception as e:
-            log.error(f"Failed to store system hourly energy data: {e}", exc_info=True)
-            raise
-        finally:
-            conn.close()
+        
+        self._execute_with_retry(
+            f"store system hourly energy for {system_id} at {hour_start}",
+            _store_system_energy
+        )
