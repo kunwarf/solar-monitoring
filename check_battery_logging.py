@@ -99,17 +99,36 @@ def check_battery_logging(db_path: str):
             bank_id, power, cell_count, samples, latest_ts = row
             print(f"     - Bank: {bank_id}, Unit: {power}, Cells: {cell_count}, Samples: {samples}, Latest: {latest_ts}")
         
-        # Show sample cell data
-        cur.execute("""
-            SELECT bank_id, power, cell, voltage, temperature, ts
-            FROM battery_cell_samples 
-            ORDER BY ts DESC 
-            LIMIT 5
-        """)
-        print("\n   Recent cell samples (last 5):")
-        for row in cur.fetchall():
-            bank_id, power, cell, voltage, temp, ts = row
-            print(f"     - {ts}: Bank={bank_id}, Unit={power}, Cell={cell}, V={voltage}V, T={temp}°C")
+        # Show sample cell data (with error handling for encoding issues)
+        try:
+            cur.execute("""
+                SELECT bank_id, power, cell, voltage, temperature, ts
+                FROM battery_cell_samples 
+                ORDER BY ts DESC 
+                LIMIT 5
+            """)
+            print("\n   Recent cell samples (last 5):")
+            for row in cur.fetchall():
+                try:
+                    bank_id, power, cell, voltage, temp, ts = row
+                    # Handle potential encoding issues
+                    if isinstance(bank_id, bytes):
+                        bank_id = bank_id.decode('utf-8', errors='replace')
+                    if isinstance(ts, bytes):
+                        ts = ts.decode('utf-8', errors='replace')
+                    print(f"     - {ts}: Bank={bank_id}, Unit={power}, Cell={cell}, V={voltage}V, T={temp}°C")
+                except Exception as e:
+                    print(f"     - Error decoding row: {e}")
+        except Exception as e:
+            print(f"   ERROR: Could not query cell samples: {e}")
+            # Try to check for encoding issues
+            try:
+                cur.execute("SELECT COUNT(*) FROM battery_cell_samples")
+                count = cur.fetchone()[0]
+                print(f"   Total cell samples in table: {count}")
+                print(f"   WARNING: There may be encoding/corruption issues in battery_cell_samples table")
+            except Exception as e2:
+                print(f"   ERROR: Could not even count cell samples: {e2}")
     except sqlite3.OperationalError as e:
         print(f"   ERROR: {e}")
     

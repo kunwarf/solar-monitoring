@@ -650,8 +650,12 @@ class JKBMSBleAdapter(BatteryAdapter):
                     f"T={round(avg_temp, 1) if avg_temp is not None else 'N/A'}°C")
             
             # Create battery unit
+            # Note: 'power' field should be the battery unit index (1-based: 1, 2, 3, ...)
+            # This is used by the frontend to identify and match cells to battery units
+            # Match the TCP/IP adapter behavior: use battery_id + 1 for 1-based indexing
+            battery_unit_index = battery_id + 1  # Convert 0-based battery_id to 1-based index
             device = BatteryUnit(
-                power=battery_id,  # Use battery_id as power field for identification
+                power=battery_unit_index,  # Battery unit index (1, 2, 3, ...), not power in watts
                 voltage=round(pack_voltage, 2) if pack_voltage is not None else None,
                 current=round(current, 2) if current is not None else None,
                 temperature=round(avg_temp, 1) if avg_temp is not None else None,
@@ -675,15 +679,16 @@ class JKBMSBleAdapter(BatteryAdapter):
                                 cell_temp = cell_temps[cell_idx % len(cell_temps)]
                         
                         cells.append({
-                            'power': battery_id,
+                            'power': battery_unit_index,  # Match BatteryUnit.power (1-based index)
                             'cell': cell_idx + 1,
                             'voltage': round(cell_voltage, 3),
                             'temperature': round(cell_temp, 1) if cell_temp is not None else None,
                         })
                 
                 cell_data_entry = {
-                    'power': battery_id,
-                    'battery_id': battery_id,
+                    'power': battery_unit_index,  # Match BatteryUnit.power (1-based index) for frontend matching
+                    'battery_id': battery_id,  # Keep 0-based battery_id for internal reference
+                    'battery_index': battery_unit_index,  # 1-based index for consistency
                     'cell_count': len(valid_cells),
                     'cells': cells,
                     'cell_voltages': valid_cells,

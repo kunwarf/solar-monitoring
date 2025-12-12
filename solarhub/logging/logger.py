@@ -569,13 +569,34 @@ class DataLogger:
             for entry in cells_data:
                 power = entry.get('power') if isinstance(entry, dict) else getattr(entry, 'power', None)
                 cells = entry.get('cells') if isinstance(entry, dict) else getattr(entry, 'cells', [])
+                
+                # Validate power is an integer (should be 1-based battery unit index)
+                if power is not None:
+                    try:
+                        power = int(power)
+                        # Warn if power is suspiciously large (might be corrupted data)
+                        if power > 1000:
+                            log.warning(f"Suspicious power value {power} for bank {bank_id} - expected 1-10 range for battery unit index")
+                    except (ValueError, TypeError):
+                        log.error(f"Invalid power value {power} (type: {type(power)}) for bank {bank_id}, skipping entry")
+                        continue
+                
                 for c in cells or []:
+                    cell_idx = c.get('cell')
+                    # Validate cell index is an integer
+                    if cell_idx is not None:
+                        try:
+                            cell_idx = int(cell_idx)
+                        except (ValueError, TypeError):
+                            log.warning(f"Invalid cell index {cell_idx} (type: {type(cell_idx)}), skipping")
+                            continue
+                    
                     rows.append(
                         (
                             ts_configured,
                             bank_id,
                             power,  # Use power from entry level, not from cell
-                            c.get('cell'),
+                            cell_idx,
                             c.get('voltage'),
                             c.get('temperature'),
                             c.get('soc'),
