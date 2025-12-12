@@ -1638,12 +1638,19 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
         log.info(f"Starting production data migration for system_id='{system_id}'")
         
         # ============= 1. LINK EXISTING ARRAYS TO SYSTEM =============
-        cur.execute("UPDATE arrays SET system_id = ? WHERE system_id IS NULL", (system_id,))
+        # Update all arrays to use the same system_id (fix any mismatches)
+        cur.execute("UPDATE arrays SET system_id = ? WHERE system_id != ? OR system_id IS NULL", (system_id, system_id))
         updated = cur.rowcount
         if updated > 0:
-            log.info(f"Linked {updated} arrays to system {system_id}")
+            log.info(f"Updated {updated} arrays to system {system_id}")
         
-        # ============= 2. LINK EXISTING BATTERY PACKS TO SYSTEM AND ARRAY =============
+        # ============= 2. UPDATE BATTERY ARRAYS TO USE SAME SYSTEM_ID =============
+        cur.execute("UPDATE battery_arrays SET system_id = ? WHERE system_id != ? OR system_id IS NULL", (system_id, system_id))
+        updated = cur.rowcount
+        if updated > 0:
+            log.info(f"Updated {updated} battery arrays to system {system_id}")
+        
+        # ============= 3. LINK EXISTING BATTERY PACKS TO SYSTEM AND ARRAY =============
         # Update all battery packs to use the same system_id (fix any mismatches)
         cur.execute("""
             UPDATE battery_packs 
@@ -1664,7 +1671,20 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
         if updated > 0:
             log.info(f"Assigned {updated} battery packs to default battery array")
         
-        # ============= 3. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
+        # ============= 4. UPDATE INVERTERS AND METERS TO USE SAME SYSTEM_ID =============
+        # Update all inverters to use the same system_id
+        cur.execute("UPDATE inverters SET system_id = ? WHERE system_id != ? OR system_id IS NULL", (system_id, system_id))
+        updated = cur.rowcount
+        if updated > 0:
+            log.info(f"Updated {updated} inverters to system {system_id}")
+        
+        # Update all meters to use the same system_id
+        cur.execute("UPDATE meters SET system_id = ? WHERE system_id != ? OR system_id IS NULL", (system_id, system_id))
+        updated = cur.rowcount
+        if updated > 0:
+            log.info(f"Updated {updated} meters to system {system_id}")
+        
+        # ============= 5. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
         # Get unique inverter_ids from energy_samples
         cur.execute("SELECT DISTINCT inverter_id FROM energy_samples")
         inverter_ids = [row[0] for row in cur.fetchall()]
