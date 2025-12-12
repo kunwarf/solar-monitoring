@@ -1705,7 +1705,24 @@ def migrate_production_data(db_path: str, system_id: str = "system") -> None:
         if updated > 0:
             log.info(f"Backfilled adapter_id for {updated} inverters from adapters table")
         
-        # ============= 6. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
+        # ============= 6. BACKFILL ADAPTER_ID IN METERS TABLE =============
+        # Update meters to link to adapters based on device_id
+        cur.execute("""
+            UPDATE meters 
+            SET adapter_id = (
+                SELECT adapter_id 
+                FROM adapters 
+                WHERE adapters.device_id = meters.meter_id 
+                AND adapters.device_type = 'meter'
+                LIMIT 1
+            )
+            WHERE adapter_id IS NULL
+        """)
+        updated = cur.rowcount
+        if updated > 0:
+            log.info(f"Backfilled adapter_id for {updated} meters from adapters table")
+        
+        # ============= 7. CREATE INVERTER ENTRIES FROM EXISTING DATA =============
         # Get unique inverter_ids from energy_samples
         cur.execute("SELECT DISTINCT inverter_id FROM energy_samples")
         inverter_ids = [row[0] for row in cur.fetchall()]
