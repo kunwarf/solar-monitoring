@@ -1378,19 +1378,9 @@ def create_api(solar_app) -> FastAPI:
                 log.error(f"API /api/home/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
             
             # Convert home_tel to dict, ensuring no circular references
-            # Use mode='json' to ensure all nested objects are properly serialized
+            # Manually extract only primitive fields to avoid any nested object issues
             try:
-                if hasattr(home_tel, 'model_dump'):
-                    home_dict = home_tel.model_dump(mode='json', exclude_none=False)
-                elif hasattr(home_tel, 'dict'):
-                    # Pydantic v1 fallback
-                    home_dict = home_tel.dict()
-                else:
-                    import json
-                    home_dict = json.loads(json.dumps(home_tel, default=str))
-            except Exception as e:
-                log.warning(f"Error converting home_tel to dict: {e}, using fallback")
-                # Fallback: manually extract fields
+                # Extract only primitive fields directly from the object
                 home_dict = {
                     "home_id": getattr(home_tel, 'home_id', 'home'),
                     "ts": str(getattr(home_tel, 'ts', '')),
@@ -1399,6 +1389,50 @@ def create_api(solar_app) -> FastAPI:
                     "total_grid_power_w": getattr(home_tel, 'total_grid_power_w', None),
                     "total_batt_power_w": getattr(home_tel, 'total_batt_power_w', None),
                     "avg_batt_soc_pct": getattr(home_tel, 'avg_batt_soc_pct', None),
+                    "arrays": [],
+                    "meters": [],
+                }
+                
+                # Safely extract arrays - only primitive fields from each array dict
+                if hasattr(home_tel, 'arrays') and home_tel.arrays:
+                    for arr in home_tel.arrays:
+                        if isinstance(arr, dict):
+                            cleaned_arr = {
+                                "array_id": arr.get("array_id"),
+                                "pv_power_w": arr.get("pv_power_w"),
+                                "load_power_w": arr.get("load_power_w"),
+                                "grid_power_w": arr.get("grid_power_w"),
+                                "batt_power_w": arr.get("batt_power_w"),
+                                "batt_soc_pct": arr.get("batt_soc_pct"),
+                                "inverter_count": arr.get("inverter_count"),
+                            }
+                            home_dict['arrays'].append(cleaned_arr)
+                
+                # Safely extract meters - only primitive fields from each meter dict
+                if hasattr(home_tel, 'meters') and home_tel.meters:
+                    for meter in home_tel.meters:
+                        if isinstance(meter, dict):
+                            cleaned_meter = {
+                                "meter_id": meter.get("meter_id"),
+                                "power_w": meter.get("power_w"),
+                                "voltage_v": meter.get("voltage_v"),
+                                "current_a": meter.get("current_a"),
+                                "frequency_hz": meter.get("frequency_hz"),
+                                "import_kwh": meter.get("import_kwh"),
+                                "export_kwh": meter.get("export_kwh"),
+                            }
+                            home_dict['meters'].append(cleaned_meter)
+            except Exception as e:
+                log.warning(f"Error converting home_tel to dict: {e}, using minimal fallback")
+                # Fallback: minimal structure
+                home_dict = {
+                    "home_id": "home",
+                    "ts": "",
+                    "total_pv_power_w": None,
+                    "total_load_power_w": None,
+                    "total_grid_power_w": None,
+                    "total_batt_power_w": None,
+                    "avg_batt_soc_pct": None,
                     "arrays": [],
                     "meters": [],
                 }
