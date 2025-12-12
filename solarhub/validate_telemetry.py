@@ -403,36 +403,90 @@ class TelemetryValidator:
             self.cur.execute("SELECT DISTINCT pack_id FROM battery_packs")
             expected_packs = [row[0] for row in self.cur.fetchall()]
             
-            # Check battery_cell_samples table
-            self.cur.execute("SELECT DISTINCT bank_id FROM battery_cell_samples")
-            packs_with_cell_data = [row[0] for row in self.cur.fetchall()]
+            # Check battery_cell_samples table - handle encoding errors gracefully
+            packs_with_cell_data = []
+            corrupted_count = 0
+            
+            try:
+                # Try to get distinct bank_ids, handling encoding errors
+                self.cur.execute("SELECT DISTINCT bank_id FROM battery_cell_samples")
+                for row in self.cur.fetchall():
+                    bank_id = row[0]
+                    # Check if bank_id is valid (not binary/corrupted)
+                    if isinstance(bank_id, bytes):
+                        corrupted_count += 1
+                        continue
+                    try:
+                        # Try to decode as UTF-8 string
+                        if isinstance(bank_id, str):
+                            bank_id.encode('utf-8')  # Validate it's valid UTF-8
+                            packs_with_cell_data.append(bank_id)
+                        else:
+                            corrupted_count += 1
+                    except (UnicodeEncodeError, AttributeError):
+                        corrupted_count += 1
+            except Exception as e:
+                # If query fails due to encoding, try alternative approach
+                log.warning(f"Could not query distinct bank_ids: {e}")
+                # Try to count total rows and estimate
+                try:
+                    self.cur.execute("SELECT COUNT(*) FROM battery_cell_samples")
+                    total_count = self.cur.fetchone()[0]
+                    return {
+                        "status": "error",
+                        "error": f"Encoding error when reading bank_id column. Total rows: {total_count}. Use cleanup_corrupted_data.py to fix.",
+                        "corrupted_rows_estimated": total_count,
+                    }
+                except:
+                    return {
+                        "status": "error",
+                        "error": f"Could not read battery_cell_samples table: {e}",
+                    }
             
             missing_packs = [p for p in expected_packs if p not in packs_with_cell_data]
             
-            # Get cell sample counts per pack
+            # Get cell sample counts per pack (skip corrupted rows)
             cell_counts = {}
             latest_samples = {}
             for pack_id in expected_packs:
-                self.cur.execute(
-                    "SELECT COUNT(*), MAX(ts) FROM battery_cell_samples WHERE bank_id = ?",
-                    (pack_id,)
-                )
-                result = self.cur.fetchone()
-                cell_counts[pack_id] = result[0] if result else 0
-                latest_samples[pack_id] = result[1] if result and result[1] else None
+                try:
+                    self.cur.execute(
+                        "SELECT COUNT(*), MAX(ts) FROM battery_cell_samples WHERE bank_id = ?",
+                        (pack_id,)
+                    )
+                    result = self.cur.fetchone()
+                    cell_counts[pack_id] = result[0] if result else 0
+                    latest_samples[pack_id] = result[1] if result and result[1] else None
+                except Exception as e:
+                    # Skip this pack if there's an encoding error
+                    log.warning(f"Could not query cell samples for pack {pack_id}: {e}")
+                    cell_counts[pack_id] = 0
+                    latest_samples[pack_id] = None
             
-            return {
-                "status": "ok" if not missing_packs else "warning",
+            result = {
+                "status": "ok" if not missing_packs and corrupted_count == 0 else "warning",
                 "expected_packs": expected_packs,
                 "packs_with_cell_data": packs_with_cell_data,
                 "missing_packs": missing_packs,
                 "cell_sample_counts": cell_counts,
                 "latest_samples": latest_samples,
             }
+            
+            if corrupted_count > 0:
+                result["corrupted_rows_detected"] = corrupted_count
+                result["warning"] = f"Found {corrupted_count} rows with corrupted bank_id. Use cleanup_corrupted_data.py to fix."
+            
+            return result
         except sqlite3.OperationalError as e:
             return {
                 "status": "error",
                 "error": str(e),
+            }
+        except Exception as e:
+            # Catch encoding errors and other exceptions
+            return {
+                "status": "error",
+                "error": f"Could not decode to UTF-8: {e}. Use cleanup_corrupted_data.py to fix corrupted data.",
             }
     
     def check_hierarchy_data(self) -> Dict[str, Any]:
