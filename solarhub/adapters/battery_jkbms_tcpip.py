@@ -774,7 +774,9 @@ class JKBMSTcpipAdapter(BatteryAdapter):
         
         # Process discovered batteries
         for battery_id in sorted(self.batteries.keys()):
-            if battery_id >= self.batteries_expected:
+            # Validate battery_id is within expected range
+            if battery_id < 0 or battery_id >= self.batteries_expected:
+                log.warning(f"JK BMS: Skipping invalid battery_id {battery_id} (expected 0-{self.batteries_expected-1})")
                 continue
             
             data = self.batteries[battery_id]
@@ -811,6 +813,11 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             # Note: 'power' field should be the battery unit index (1-based: 1, 2, 3, ...)
             # This is used by the frontend to identify and match cells to battery units
             battery_unit_index = battery_id + 1  # Convert 0-based battery_id to 1-based index
+            
+            # Validate battery_unit_index is within reasonable range
+            if battery_unit_index < 1 or battery_unit_index > self.batteries_expected:
+                log.error(f"JK BMS: Invalid battery_unit_index {battery_unit_index} for battery_id {battery_id} (expected 1-{self.batteries_expected})")
+                continue
             device = BatteryUnit(
                 power=battery_unit_index,  # Battery unit index (1, 2, 3, ...), not power in watts
                 voltage=voltage,
@@ -840,8 +847,19 @@ class JKBMSTcpipAdapter(BatteryAdapter):
             
             for cell_idx, cell_voltage in enumerate(cell_voltages):
                 if cell_voltage is not None:
+                    # Validate cell index is within expected range
+                    cell_number = cell_idx + 1
+                    if cell_number < 1 or cell_number > self.cells_per_battery:
+                        log.warning(f"JK BMS Battery {battery_unit_index}: Skipping invalid cell index {cell_number} (expected 1-{self.cells_per_battery})")
+                        continue
+                    
+                    # Validate cell voltage is reasonable (typically 2.5V to 4.5V per cell)
+                    if cell_voltage < 2.0 or cell_voltage > 5.0:
+                        log.warning(f"JK BMS Battery {battery_unit_index} Cell {cell_number}: Suspicious cell voltage {cell_voltage}V (expected 2.0-5.0V)")
+                        # Still include it, but log the warning
+                    
                     cell_data["cells"].append({
-                        "cell": cell_idx + 1,  # Database expects 'cell', not 'cell_id'
+                        "cell": cell_number,  # Database expects 'cell', not 'cell_id'
                         "voltage": cell_voltage,
                     })
             
