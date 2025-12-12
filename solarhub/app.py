@@ -2397,7 +2397,20 @@ class SolarApp:
             if not array and tel.array_id and tel.array_id in self.arrays:
                 array = self.arrays[tel.array_id]
                 array_inverter_ids = array.inverter_ids if hasattr(array, 'inverter_ids') else []
-                attached_battery_array_id = array.attached_pack_ids if hasattr(array, 'attached_pack_ids') else []
+                # For config-based arrays, attached_pack_ids is a list, not an array_id
+                # We need to find the battery array that's attached to this inverter array
+                attached_battery_array_id = None
+                if hasattr(array, 'attached_pack_ids') and array.attached_pack_ids:
+                    # Find battery array that contains these packs
+                    if hasattr(self, 'hierarchy_systems') and self.hierarchy_systems:
+                        for system in self.hierarchy_systems.values():
+                            for bat_array in system.battery_arrays:
+                                pack_ids = [pack.pack_id for pack in bat_array.battery_packs]
+                                if any(pid in pack_ids for pid in array.attached_pack_ids):
+                                    attached_battery_array_id = bat_array.battery_array_id
+                                    break
+                            if attached_battery_array_id:
+                                break
             
             if array and array_inverter_ids:
                 # Collect telemetry for all inverters in this array

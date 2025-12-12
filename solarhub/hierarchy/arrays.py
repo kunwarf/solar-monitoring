@@ -42,6 +42,23 @@ class InverterArray(BaseArray):
                 return inverter
         return None
     
+    @property
+    def inverter_ids(self) -> List[str]:
+        """Get list of inverter IDs in this array."""
+        return [inv.inverter_id for inv in self.inverters]
+    
+    @property
+    def attached_pack_ids(self) -> List[str]:
+        """Get list of attached battery pack IDs (from attached battery array)."""
+        if self.attached_battery_array:
+            return [pack.pack_id for pack in self.attached_battery_array.battery_packs]
+        return []
+    
+    @property
+    def attached_battery_array_id(self) -> Optional[str]:
+        """Get attached battery array ID."""
+        return self.attached_battery_array.battery_array_id if self.attached_battery_array else None
+    
     def attach_battery_array(self, battery_array: 'BatteryArray'):
         """Attach a battery array to this inverter array."""
         if battery_array.system_id != self.system_id:
