@@ -1475,19 +1475,31 @@ def create_api(solar_app) -> FastAPI:
                             "vendor": inverter.vendor,
                             "phase_type": inverter.phase_type,
                         }
-                        # Add telemetry if available - ensure it's a plain dict
+                        # Add telemetry if available - ensure it's a plain dict with only primitives
                         if inv_tel_dict:
                             try:
+                                # Extract only primitive fields to avoid circular references
                                 if hasattr(inv_tel_dict, 'model_dump'):
-                                    # It's a Pydantic model, convert to dict with JSON mode
-                                    inverter_data["telemetry"] = inv_tel_dict.model_dump(mode='json', exclude_none=False)
+                                    tel_dict = inv_tel_dict.model_dump(mode='json', exclude_none=False)
                                 elif isinstance(inv_tel_dict, dict):
-                                    # Already a dict, create a copy to avoid references
-                                    inverter_data["telemetry"] = {k: v for k, v in inv_tel_dict.items()}
+                                    tel_dict = inv_tel_dict
                                 else:
-                                    # Try to convert to dict using json serialization
                                     import json
-                                    inverter_data["telemetry"] = json.loads(json.dumps(inv_tel_dict, default=str))
+                                    tel_dict = json.loads(json.dumps(inv_tel_dict, default=str))
+                                
+                                # Extract only safe primitive fields
+                                inverter_data["telemetry"] = {
+                                    "inverter_id": tel_dict.get("inverter_id"),
+                                    "ts": tel_dict.get("ts"),
+                                    "pv_power_w": tel_dict.get("pv_power_w"),
+                                    "load_power_w": tel_dict.get("load_power_w"),
+                                    "grid_power_w": tel_dict.get("grid_power_w"),
+                                    "batt_power_w": tel_dict.get("batt_power_w"),
+                                    "batt_soc_pct": tel_dict.get("batt_soc_pct"),
+                                    "batt_voltage_v": tel_dict.get("batt_voltage_v"),
+                                    "batt_current_a": tel_dict.get("batt_current_a"),
+                                    "inverter_temp_c": tel_dict.get("inverter_temp_c"),
+                                }
                             except Exception as e:
                                 log.debug(f"Error serializing inverter telemetry for {inverter.inverter_id}: {e}")
                                 # Skip telemetry if serialization fails
@@ -1641,7 +1653,7 @@ def create_api(solar_app) -> FastAPI:
             
             return {
                 "status": "ok",
-                "system": home_dict  # Changed from "home" to "system" to reflect hierarchy
+                "home": home_dict  # Frontend expects "home" key
             }
         except Exception as e:
             log.error(f"Error in /api/home/now: {e}", exc_info=True)
