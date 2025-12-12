@@ -69,11 +69,11 @@ class TelemetryValidator:
             "system_hourly_energy",  # System-level hourly energy
             "battery_bank_hourly",  # Battery pack hourly energy
             "meter_hourly_energy",  # Meter hourly energy
-            "daily_energy",  # Daily energy summaries
-            "array_daily_energy",  # Array-level daily energy
-            "system_daily_energy",  # System-level daily energy
+            "daily_summary",  # Inverter daily energy summaries
+            "array_daily_summary",  # Array-level daily energy
+            "system_daily_summary",  # System-level daily energy
             "battery_bank_daily",  # Battery pack daily energy
-            "meter_daily_energy",  # Meter daily energy
+            "meter_daily",  # Meter daily energy
         ]
         
         self.cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -279,8 +279,8 @@ class TelemetryValidator:
     def check_daily_energy(self) -> Dict[str, Any]:
         """Check daily energy aggregation."""
         try:
-            # Check daily energy tables
-            daily_tables = ["daily_energy", "array_daily_energy", "system_daily_energy", "battery_bank_daily", "meter_daily_energy"]
+            # Check daily energy tables (using actual table names from schema)
+            daily_tables = ["daily_summary", "array_daily_summary", "system_daily_summary", "battery_bank_daily", "meter_daily"]
             daily_counts = {}
             latest_daily = {}
             
