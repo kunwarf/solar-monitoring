@@ -1477,28 +1477,7 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
                 # Single adapter
                 adapters_list.append((bank_cfg['adapter'], 1, True))
             
-            # Create adapter instances
-            for idx, (adapter_cfg, priority, enabled) in enumerate(adapters_list):
-                adapter_type = adapter_cfg.get('type')
-                if not adapter_type:
-                    continue
-                
-                adapter_id = f"{pack_id}_adapter_{idx + 1}" if len(adapters_list) > 1 else f"{pack_id}_adapter"
-                config_json = json.dumps(adapter_cfg)
-                
-                cur.execute("""
-                    INSERT OR REPLACE INTO adapters (adapter_id, adapter_type, device_category, device_id, device_type, priority, enabled, config_json)
-                    VALUES (?, ?, 'battery', ?, 'battery_pack', ?, ?, ?)
-                """, (adapter_id, adapter_type, pack_id, priority, 1 if enabled else 0, config_json))
-                
-                # Link adapter to battery pack
-                cur.execute("""
-                    INSERT OR REPLACE INTO battery_pack_adapters (pack_id, adapter_id, priority, enabled)
-                    VALUES (?, ?, ?, ?)
-                """, (pack_id, adapter_id, priority, 1 if enabled else 0))
-                log.debug(f"Created adapter for battery pack {pack_id}: {adapter_id} (priority {priority})")
-            
-            # Check if battery pack exists
+            # First, ensure battery pack exists (needed for foreign key constraint)
             cur.execute("SELECT COUNT(*) FROM battery_packs WHERE pack_id = ?", (pack_id,))
             if cur.fetchone()[0] == 0:
                 cur.execute("""
@@ -1513,6 +1492,28 @@ def migrate_config_yaml_to_database(db_path: str, config_path: str = "config.yam
                     SET battery_array_id = COALESCE(battery_array_id, ?), system_id = COALESCE(system_id, ?)
                     WHERE pack_id = ? AND (battery_array_id IS NULL OR system_id IS NULL)
                 """, (battery_array_id, system_id, pack_id))
+            
+            # Create adapter instances (after battery pack exists)
+            for idx, (adapter_cfg, priority, enabled) in enumerate(adapters_list):
+                adapter_type = adapter_cfg.get('type')
+                if not adapter_type:
+                    continue
+                
+                adapter_id = f"{pack_id}_adapter_{idx + 1}" if len(adapters_list) > 1 else f"{pack_id}_adapter"
+                config_json = json.dumps(adapter_cfg)
+                
+                # Create adapter instance
+                cur.execute("""
+                    INSERT OR REPLACE INTO adapters (adapter_id, adapter_type, device_category, device_id, device_type, priority, enabled, config_json)
+                    VALUES (?, ?, 'battery', ?, 'battery_pack', ?, ?, ?)
+                """, (adapter_id, adapter_type, pack_id, priority, 1 if enabled else 0, config_json))
+                log.debug(f"Created adapter for battery pack {pack_id}: {adapter_id} (priority {priority})")
+                
+                # Link adapter to battery pack (now that both exist)
+                cur.execute("""
+                    INSERT OR REPLACE INTO battery_pack_adapters (pack_id, adapter_id, priority, enabled)
+                    VALUES (?, ?, ?, ?)
+                """, (pack_id, adapter_id, priority, 1 if enabled else 0))
             
             # Create battery units and cells if specified
             batteries_count = bank_cfg.get('batteries', 0)
