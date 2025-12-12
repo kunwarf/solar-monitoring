@@ -1638,16 +1638,20 @@ def create_api(solar_app) -> FastAPI:
                 log.error(f"Response contains non-serializable data: {e}")
                 # Fallback: return minimal response without hierarchy data
                 return {
-                    "status": "error",
-                    "error": "Failed to serialize response data",
-                    "system": {
-                        "system_id": target_system_id,
-                        "system_name": home_dict.get("system_name", "Unknown"),
+                    "status": "ok",
+                    "home": {
+                        "home_id": "home",
+                        "ts": home_dict.get("ts", ""),
                         "total_pv_power_w": home_dict.get("total_pv_power_w"),
                         "total_load_power_w": home_dict.get("total_load_power_w"),
                         "total_grid_power_w": home_dict.get("total_grid_power_w"),
                         "total_batt_power_w": home_dict.get("total_batt_power_w"),
                         "avg_batt_soc_pct": home_dict.get("avg_batt_soc_pct"),
+                        "arrays": home_dict.get("arrays", []),
+                        "meters": home_dict.get("meters", []),
+                        "daily_energy": home_dict.get("daily_energy"),
+                        "monthly_energy": home_dict.get("monthly_energy"),
+                        "financial_metrics": home_dict.get("financial_metrics"),
                     }
                 }
             
