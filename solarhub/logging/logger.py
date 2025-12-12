@@ -103,25 +103,38 @@ class DataLogger:
             # Don't raise - allow system to continue with existing structure
         
         # Step 6: Optional aggregation backfill (runs in background, doesn't block startup)
+        # Only runs if enabled via database flag
         try:
-            from solarhub.aggregation_backfill import backfill_all_aggregated_tables
-            import threading
+            # Check if statistics backfill is enabled
+            con = sqlite3.connect(self.path)
+            cur = con.cursor()
+            cur.execute("SELECT value FROM configuration WHERE key = ?", ("enable_statistics_backfill",))
+            result = cur.fetchone()
+            con.close()
             
-            def run_backfill():
-                """Run aggregation backfill in background thread."""
-                try:
-                    log.info("Starting aggregation backfill for historical data (last 30 days)")
-                    backfill_all_aggregated_tables(self.path, days_back=30)
-                    log.info("Aggregation backfill completed successfully")
-                except Exception as e:
-                    log.warning(f"Aggregation backfill failed (non-critical): {e}")
+            backfill_enabled = result and result[0].lower() == 'true' if result else False
             
-            # Start backfill in background thread to avoid blocking startup
-            backfill_thread = threading.Thread(target=run_backfill, daemon=True)
-            backfill_thread.start()
-            log.info("Started aggregation backfill in background thread")
+            if backfill_enabled:
+                from solarhub.aggregation_backfill import backfill_all_aggregated_tables
+                import threading
+                
+                def run_backfill():
+                    """Run aggregation backfill in background thread."""
+                    try:
+                        log.info("Starting aggregation backfill for historical data (last 30 days)")
+                        backfill_all_aggregated_tables(self.path, days_back=30)
+                        log.info("Aggregation backfill completed successfully")
+                    except Exception as e:
+                        log.warning(f"Aggregation backfill failed (non-critical): {e}")
+                
+                # Start backfill in background thread to avoid blocking startup
+                backfill_thread = threading.Thread(target=run_backfill, daemon=True)
+                backfill_thread.start()
+                log.info("Started aggregation backfill in background thread (enabled via database flag)")
+            else:
+                log.info("Statistics backfill is disabled by default. Set 'enable_statistics_backfill' = 'true' in configuration table to enable.")
         except Exception as e:
-            log.warning(f"Failed to start aggregation backfill (non-critical): {e}")
+            log.warning(f"Failed to check statistics backfill flag (non-critical): {e}")
     
     def _init(self):
         log.info(f"Initializing database at: {self.path}")

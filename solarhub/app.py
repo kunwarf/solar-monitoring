@@ -1331,8 +1331,22 @@ class SolarApp:
             log.info(f"Number of inverters configured: {len(self.inverters)}")
             
             # One-time automatic backfill for today's hours up to the last complete hour
+            # Only runs if enabled via database flag
             try:
-                await self._backfill_today_hourly_energy()
+                # Check if statistics backfill is enabled
+                import sqlite3
+                con = sqlite3.connect(self.logger.path)
+                cur = con.cursor()
+                cur.execute("SELECT value FROM configuration WHERE key = ?", ("enable_statistics_backfill",))
+                result = cur.fetchone()
+                con.close()
+                
+                backfill_enabled = result and result[0].lower() == 'true' if result else False
+                
+                if backfill_enabled:
+                    await self._backfill_today_hourly_energy()
+                else:
+                    log.info("Today's hourly energy backfill is disabled. Set 'enable_statistics_backfill' = 'true' in configuration table to enable.")
             except Exception as e:
                 log.warning(f"Automatic hourly-energy backfill skipped due to error: {e}")
 
