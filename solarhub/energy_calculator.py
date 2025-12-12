@@ -963,7 +963,6 @@ class EnergyCalculator:
                     SUM(avg_load_power_w) as avg_load_power_w,
                     SUM(avg_battery_power_w) as avg_battery_power_w,
                     SUM(avg_grid_power_w) as avg_grid_power_w,
-                    AVG(avg_soc_pct) as avg_soc_pct,
                     SUM(sample_count) as sample_count
                 FROM array_hourly_energy 
                 WHERE system_id = ? 
@@ -976,34 +975,67 @@ class EnergyCalculator:
             row = cursor.fetchone()
             
             if row:
-                solar_kwh, load_kwh, batt_charge_kwh, batt_discharge_kwh, grid_import_kwh, grid_export_kwh, avg_solar_w, avg_load_w, avg_batt_w, avg_grid_w, avg_soc, sample_count = row
+                solar_kwh, load_kwh, batt_charge_kwh, batt_discharge_kwh, grid_import_kwh, grid_export_kwh, avg_solar_w, avg_load_w, avg_batt_w, avg_grid_w, sample_count = row
                 
                 # Store in system_hourly_energy table
-                cursor.execute("""
-                    INSERT OR REPLACE INTO system_hourly_energy 
-                    (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
-                     battery_charge_energy_kwh, battery_discharge_energy_kwh,
-                     grid_import_energy_kwh, grid_export_energy_kwh,
-                     avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
-                     avg_soc_pct, sample_count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    system_id,
-                    date,
-                    hour,
-                    solar_kwh or 0.0,
-                    load_kwh or 0.0,
-                    batt_charge_kwh or 0.0,
-                    batt_discharge_kwh or 0.0,
-                    grid_import_kwh or 0.0,
-                    grid_export_kwh or 0.0,
-                    avg_solar_w or 0.0,
-                    avg_load_w or 0.0,
-                    avg_batt_w or 0.0,
-                    avg_grid_w or 0.0,
-                    avg_soc,
-                    sample_count or 0
-                ))
+                # Check if avg_soc_pct column exists in system_hourly_energy table
+                cursor.execute("PRAGMA table_info(system_hourly_energy)")
+                columns = [col[1] for col in cursor.fetchall()]
+                has_avg_soc = 'avg_soc_pct' in columns
+                
+                if has_avg_soc:
+                    # avg_soc_pct is not available from array_hourly_energy, set to NULL
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO system_hourly_energy 
+                        (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
+                         battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                         grid_import_energy_kwh, grid_export_energy_kwh,
+                         avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                         avg_soc_pct, sample_count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        system_id,
+                        date,
+                        hour,
+                        solar_kwh or 0.0,
+                        load_kwh or 0.0,
+                        batt_charge_kwh or 0.0,
+                        batt_discharge_kwh or 0.0,
+                        grid_import_kwh or 0.0,
+                        grid_export_kwh or 0.0,
+                        avg_solar_w or 0.0,
+                        avg_load_w or 0.0,
+                        avg_batt_w or 0.0,
+                        avg_grid_w or 0.0,
+                        None,  # avg_soc_pct not available from array level
+                        sample_count or 0
+                    ))
+                else:
+                    # avg_soc_pct column doesn't exist, don't include it
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO system_hourly_energy 
+                        (system_id, date, hour_start, solar_energy_kwh, load_energy_kwh, 
+                         battery_charge_energy_kwh, battery_discharge_energy_kwh,
+                         grid_import_energy_kwh, grid_export_energy_kwh,
+                         avg_solar_power_w, avg_load_power_w, avg_battery_power_w, avg_grid_power_w,
+                         sample_count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        system_id,
+                        date,
+                        hour,
+                        solar_kwh or 0.0,
+                        load_kwh or 0.0,
+                        batt_charge_kwh or 0.0,
+                        batt_discharge_kwh or 0.0,
+                        grid_import_kwh or 0.0,
+                        grid_export_kwh or 0.0,
+                        avg_solar_w or 0.0,
+                        avg_load_w or 0.0,
+                        avg_batt_w or 0.0,
+                        avg_grid_w or 0.0,
+                        sample_count or 0
+                    ))
                 log.debug(f"Stored system hourly energy data for {system_id} at {hour_start}")
             else:
                 log.warning(f"No array hourly energy data found for system {system_id} at {hour_start}")
