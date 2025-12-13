@@ -200,7 +200,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       systems: transformedSystems,
       meters,
     };
-  }, [manager, systems]);
+  }, [manager, systems, homeTelemetry]); // Added homeTelemetry to trigger re-transformation when telemetry updates
 
   // Transform energy stats from home telemetry
   const energyStats = useMemo(() => {
