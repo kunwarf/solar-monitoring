@@ -930,8 +930,8 @@ def create_api(solar_app) -> FastAPI:
         """Get PV forecast data for a specific array."""
         return api_forecast(inverter_id="all", array_id=array_id)
     
-    @app.get("/api/home/now")
-    def api_home_now(
+    @app.get("/api/system/now")
+    def api_system_now(
         period: str = "today",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,

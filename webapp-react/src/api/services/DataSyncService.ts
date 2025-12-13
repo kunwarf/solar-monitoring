@@ -87,10 +87,10 @@ export class DataSyncService {
         await hierarchyService.loadHierarchy()
       }
 
-      // Update system/home telemetry
+      // Update system telemetry
       try {
-        const homeTelemetry = await telemetryService.getHomeNow()
-        // Home telemetry is already updated in telemetryService
+        const systemTelemetry = await telemetryService.getSystemNow()
+        // System telemetry is already updated in telemetryService
       } catch (err) {
         console.warn('[DataSyncService] Failed to update home telemetry:', err)
       }
@@ -185,7 +185,7 @@ export class DataSyncService {
    */
   async updateSystemTelemetry(systemId: string): Promise<void> {
     try {
-      await telemetryService.getHomeNow()
+      await telemetryService.getSystemNow()
     } catch (err) {
       console.error(`[DataSyncService] Failed to update system ${systemId} telemetry:`, err)
       throw err

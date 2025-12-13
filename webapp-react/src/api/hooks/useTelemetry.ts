@@ -22,20 +22,25 @@ export function useInverterTelemetry(
 }
 
 /**
- * Hook to fetch home-level telemetry
+ * Hook to fetch system-level telemetry
  */
-export function useHomeTelemetry(options?: {
+export function useSystemTelemetry(options?: {
   enabled?: boolean
   refetchInterval?: number
 }) {
   return useQuery<HomeTelemetryData>({
-    queryKey: ['telemetry', 'home'],
-    queryFn: () => telemetryService.getHomeNow(),
+    queryKey: ['telemetry', 'system'],
+    queryFn: () => telemetryService.getSystemNow(),
     enabled: options?.enabled !== false,
     refetchInterval: options?.refetchInterval || 5000, // 5 seconds default
     staleTime: 3000,
   })
 }
+
+/**
+ * @deprecated Use useSystemTelemetry instead. This is kept for backward compatibility.
+ */
+export const useHomeTelemetry = useSystemTelemetry
 
 /**
  * Hook to fetch array telemetry
