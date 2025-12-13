@@ -148,7 +148,7 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           periodParams.append('start_date', customStartDate)
           periodParams.append('end_date', customEndDate)
         }
-        const systemTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
+        const systemTelemetryRes: any = await api.get(`/api/system/now?${periodParams.toString()}`).catch(() => null)
         
         if (!isMounted) return
         
@@ -156,7 +156,7 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
         
         if (config?.home) {
           const homeConfig = config.home
-          const systemTel = systemTelemetryRes?.home
+          const systemTel = systemTelemetryRes?.system
           
           // Count arrays, inverters, and battery banks
           const arrayCount = config?.arrays?.length || 0
@@ -408,10 +408,10 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           periodParams.append('start_date', customStartDate)
           periodParams.append('end_date', customEndDate)
         }
-        const systemTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
+        const systemTelemetryRes: any = await api.get(`/api/system/now?${periodParams.toString()}`).catch(() => null)
         if (!isMounted) return
         
-        const systemTel = systemTelemetryRes?.home
+        const systemTel = systemTelemetryRes?.system
         if (systemTel) {
           // Get config to map array names
           const configRes: any = await api.get('/api/config').catch(() => null)
