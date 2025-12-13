@@ -321,10 +321,15 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
   // Check if device has batteryBankId context field (from DataProvider)
   const batteryBankId = (device as any)?.batteryBankId || device?.id;
   
-  // Find battery array from hierarchy by checking all systems
+  // Find battery array from hierarchy
+  // HomeHierarchy can have either:
+  // 1. systems[] (from DataProvider/mockData structure)
+  // 2. batteryArrays[] directly (from API hierarchy structure)
   let batteryArray: any = null;
-  if (hierarchy?.systems) {
-    for (const system of hierarchy.systems) {
+  
+  if ((hierarchy as any)?.systems) {
+    // Structure with systems array
+    for (const system of (hierarchy as any).systems) {
       for (const ba of system.batteryArrays || []) {
         // Check if device ID matches any battery in this array
         const matchingBattery = ba.batteries?.find((b: any) => 
@@ -338,6 +343,21 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
         }
       }
       if (batteryArray) break;
+    }
+  } else if (hierarchy?.batteryArrays) {
+    // Structure with batteryArrays directly
+    for (const ba of hierarchy.batteryArrays) {
+      // Check if device ID matches any battery in this array
+      // Note: API hierarchy structure may have different battery representation
+      const matchingBattery = (ba as any).batteries?.find((b: any) => 
+        b.id === batteryBankId || 
+        b.batteryBankId === batteryBankId ||
+        device?.id === b.id
+      );
+      if (matchingBattery) {
+        batteryArray = ba;
+        break;
+      }
     }
   }
   
