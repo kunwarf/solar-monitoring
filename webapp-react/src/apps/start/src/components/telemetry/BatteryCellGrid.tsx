@@ -348,7 +348,11 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
   });
   
   // Get battery data - should be direct match now
-  const battery = batteryTelemetry.data;
+  // When bankId is provided, getBatteryNow returns single BatteryData
+  // When bankId is not provided, it returns BatteryData[]
+  const battery = Array.isArray(batteryTelemetry.data) 
+    ? batteryTelemetry.data.find(b => b.id === batteryBankId) || batteryTelemetry.data[0]
+    : batteryTelemetry.data;
   
   // Fetch hourly energy for charts
   const { data: hourlyData } = useHourlyEnergy({ inverterId: undefined });
