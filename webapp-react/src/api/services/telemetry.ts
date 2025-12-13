@@ -210,26 +210,25 @@ export const telemetryService = {
     const configuredBanks = response.configured_banks || []
     const manager = HierarchyManager.getInstance()
     
-    // Handle multiple banks
-    if (response.banks && response.banks.length > 0) {
-      return response.banks.map(bat => {
-        const normalized = normalizeBatteryData(bat)
-        // Add configured_banks to raw data for name lookup
-        if (normalized.raw) {
-          ;(normalized.raw as any).configured_banks = configuredBanks
-        }
-        
-        // Update hierarchy object
-        manager.updateBatteryTelemetry(normalized.id, normalized)
-        
-        return normalized
-      })
+    // When bank_id is specified, backend returns {status: "ok", battery: {...}, banks: [...]}
+    // When bank_id is not specified, backend returns {status: "ok", banks: [...]}
+    // Always prefer response.battery if available (specific bank request), otherwise use banks array
+    let batteriesToProcess: any[] = []
+    
+    if (response.battery) {
+      // Specific bank requested - use response.battery
+      batteriesToProcess = [response.battery]
+    } else if (response.banks && response.banks.length > 0) {
+      // Multiple banks or all banks - use banks array
+      batteriesToProcess = response.banks
+    } else {
+      throw new Error('No battery data available')
     }
     
-    // Handle single battery (backward compatibility)
-    if (response.battery) {
-      const normalized = normalizeBatteryData(response.battery)
-      // Add configured_banks to raw data
+    // Normalize and update hierarchy for each battery
+    return batteriesToProcess.map(bat => {
+      const normalized = normalizeBatteryData(bat)
+      // Add configured_banks to raw data for name lookup
       if (normalized.raw) {
         ;(normalized.raw as any).configured_banks = configuredBanks
       }
@@ -238,9 +237,7 @@ export const telemetryService = {
       manager.updateBatteryTelemetry(normalized.id, normalized)
       
       return normalized
-    }
-    
-    throw new Error('No battery data available')
+    })
   },
 }
 
