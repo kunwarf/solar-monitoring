@@ -42,11 +42,11 @@ export const telemetryService = {
   },
 
   /**
-   * Get home-level aggregated telemetry
+   * Get system-level aggregated telemetry
    */
   async getHomeNow(): Promise<HomeTelemetryData> {
     const response = await api.get<BackendHomeTelemetryResponse>(
-      '/api/home/now',
+      '/api/system/now',
       { ttl: CACHE_TTL.TELEMETRY, key: 'telemetry:home' }
     )
     
@@ -110,16 +110,59 @@ export const telemetryService = {
                   ts: packTel.ts || new Date().toISOString(),
                   voltage: packTel.voltage || null,
                   current: packTel.current || null,
-                  power: packTel.power || null,
                   soc: packTel.soc || null,
                   temperature: packTel.temperature || null,
-                  status: packTel.soc !== null && packTel.soc !== undefined ? 'online' : 'offline',
+                  batteryCount: 1,
+                  cellsPerBattery: 0,
+                  devices: [],
+                  cells: [],
                 }
                 manager.updateBatteryTelemetry(pack.pack_id, batteryData)
               } catch (err) {
                 console.warn(`[telemetryService] Failed to update battery pack ${pack.pack_id} telemetry:`, err)
               }
             }
+          }
+        }
+      }
+    }
+    
+    // Update meter telemetry from system response
+    if (systemData.meters && Array.isArray(systemData.meters)) {
+      for (const meter of systemData.meters) {
+        if (meter.meter_id) {
+          try {
+            // Convert meter data to TelemetryData format
+            const meterTelemetryData: any = {
+              ts: new Date().toISOString(),
+              pv_power_w: 0, // Meters don't have PV power
+              load_power_w: 0, // Meters don't have load power
+              grid_power_w: (meter.power_w || 0), // Meter power (positive = import, negative = export)
+              batt_power_w: 0, // Meters don't have battery power
+              batt_soc_pct: null,
+              batt_voltage_v: null,
+              batt_current_a: null,
+              inverter_temp_c: null,
+              _metadata: {
+                import_kwh: meter.import_kwh || 0,
+                export_kwh: meter.export_kwh || 0,
+                voltage_v: meter.voltage_v || null,
+                current_a: meter.current_a || null,
+                frequency_hz: meter.frequency_hz || null,
+              },
+            }
+            // Normalize the telemetry data
+            const normalizedTelemetry = normalizeTelemetry(meterTelemetryData, 'meter', meter.meter_id)
+            // Store meter-specific data in the raw field for access by Meter.getImportEnergy() and getExportEnergy()
+            if (normalizedTelemetry.raw) {
+              const raw = normalizedTelemetry.raw as any
+              raw.import_kwh = meter.import_kwh || 0
+              raw.export_kwh = meter.export_kwh || 0
+            }
+            // Update the hierarchy object
+            manager.updateTelemetry(meter.meter_id, normalizedTelemetry)
+          } catch (err) {
+            console.warn(`[telemetryService] Failed to update meter ${meter.meter_id} telemetry:`, err)
           }
         }
       }

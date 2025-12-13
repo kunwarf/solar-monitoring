@@ -41,28 +41,38 @@ export class Meter extends BaseDevice {
   }
 
   /**
-   * Get meter power in kW
+   * Get meter power in kW (positive = import, negative = export)
    */
   getPower(): number {
-    // Meters typically report power in the telemetry
-    // This would need to be extracted from meter-specific telemetry
-    return 0 // Placeholder - needs meter telemetry structure
+    if (this._telemetry) {
+      // Meter power is in gridPower field (already in kW from normalization)
+      return this._telemetry.gridPower || 0
+    }
+    return 0
   }
 
   /**
    * Get import energy in kWh
    */
   getImportEnergy(): number {
-    // This would come from meter telemetry
-    return 0 // Placeholder
+    if (this._telemetry && this._telemetry.raw) {
+      // Import energy is stored in raw._metadata or raw.import_kwh
+      return (this._telemetry.raw as any).import_kwh || 
+             (this._telemetry.raw as any)._metadata?.import_kwh || 0
+    }
+    return 0
   }
 
   /**
    * Get export energy in kWh
    */
   getExportEnergy(): number {
-    // This would come from meter telemetry
-    return 0 // Placeholder
+    if (this._telemetry && this._telemetry.raw) {
+      // Export energy is stored in raw._metadata or raw.export_kwh
+      return (this._telemetry.raw as any).export_kwh || 
+             (this._telemetry.raw as any)._metadata?.export_kwh || 0
+    }
+    return 0
   }
 
   /**

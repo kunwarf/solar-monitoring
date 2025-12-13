@@ -12,8 +12,8 @@ import type {
  * Normalize backend telemetry data to frontend format
  */
 export function normalizeTelemetry(
-  data: BackendTelemetryData,
-  source: 'inverter' | 'array' | 'home' = 'inverter',
+  data: BackendTelemetryData | any, // Allow any for meter data
+  source: 'inverter' | 'array' | 'home' | 'meter' = 'inverter',
   sourceId?: string
 ): TelemetryData {
   return {

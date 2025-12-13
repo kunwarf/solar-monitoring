@@ -122,7 +122,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
         </div>
 
         {/* System Aggregated Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           <div className="flex items-center gap-2 p-2 rounded-md bg-background/50">
             <Sun className="w-4 h-4 text-warning" />
             <div className="min-w-0 text-left">
