@@ -19,7 +19,7 @@ const Index = () => {
       />
       
       <div className="p-6 space-y-6">
-        {/* Row 1: Financial & Metrics (6 cards) */}
+        {/* Row 1: Financial & Daily Energy Stats (6 cards) */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             title="Monthly Bill Estimate"
@@ -48,64 +48,12 @@ const Index = () => {
             delay={0.2}
           />
           <StatCard
-            title="Predicted vs Actual"
-            value={`${energyStats.dailyProduction.toFixed(0)}/${energyStats.dailyPrediction.toFixed(0)}`}
-            unit="kWh"
-            icon={Target}
-            variant="prediction"
-            trend={energyStats.dailyPrediction > 0 ? { value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction } : undefined}
-            delay={0.3}
-          />
-          <StatCard
-            title="Avg kWh/kWp"
-            value={energyStats.avgKwPerKwp.toFixed(2)}
-            unit="kWh/kWp"
-            icon={Gauge}
-            delay={0.4}
-          />
-          <StatCard
-            title="Self-Consumption"
-            value={energyStats.selfConsumption.toString()}
-            unit="%"
-            icon={Home}
-            variant="consumption"
-            delay={0.5}
-          />
-        </div>
-
-        {/* Row 2: Energy Production & Consumption (6 cards) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard
-            title="Today's Production"
-            value={energyStats.dailyProduction.toFixed(1)}
-            unit="kWh"
-            icon={Sun}
-            variant="solar"
-            delay={0.6}
-          />
-          <StatCard
-            title="Grid Import"
-            value={energyStats.gridImportEnergy.toFixed(1)}
-            unit="kWh"
-            icon={ArrowDown}
-            variant="grid"
-            delay={0.7}
-          />
-          <StatCard
-            title="Grid Exported"
-            value={energyStats.gridExportEnergy.toFixed(1)}
-            unit="kWh"
-            icon={ArrowUp}
-            variant="grid"
-            delay={0.8}
-          />
-          <StatCard
             title="Battery Charge Energy"
             value={energyStats.batteryChargeEnergy.toFixed(1)}
             unit="kWh"
             icon={ArrowDown}
             variant="battery"
-            delay={0.9}
+            delay={0.3}
           />
           <StatCard
             title="Battery Discharge Energy"
@@ -113,7 +61,7 @@ const Index = () => {
             unit="kWh"
             icon={ArrowUp}
             variant="battery"
-            delay={1.0}
+            delay={0.4}
           />
           <StatCard
             title="Load Energy"
@@ -121,7 +69,59 @@ const Index = () => {
             unit="kWh"
             icon={Home}
             variant="consumption"
+            delay={0.5}
+          />
+        </div>
+
+        {/* Row 2: Grid Import & Production Stats (6 cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <StatCard
+            title="Grid Import"
+            value={energyStats.gridImportEnergy.toFixed(1)}
+            unit="kWh"
+            icon={ArrowDown}
+            variant="grid"
+            delay={0.6}
+          />
+          <StatCard
+            title="Today's Production"
+            value={energyStats.dailyProduction.toFixed(1)}
+            unit="kWh"
+            icon={Sun}
+            variant="solar"
+            delay={0.8}
+          />
+          <StatCard
+            title="Predicted vs Actual"
+            value={`${energyStats.dailyProduction.toFixed(0)}/${energyStats.dailyPrediction.toFixed(0)}`}
+            unit="kWh"
+            icon={Target}
+            variant="prediction"
+            trend={energyStats.dailyPrediction > 0 ? { value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction } : undefined}
+            delay={0.9}
+          />
+          <StatCard
+            title="Avg kWh/kWp"
+            value={energyStats.avgKwPerKwp.toFixed(2)}
+            unit="kWh/kWp"
+            icon={Gauge}
+            delay={1.0}
+          />
+          <StatCard
+            title="Self-Consumption"
+            value={energyStats.selfConsumption.toString()}
+            unit="%"
+            icon={Home}
+            variant="consumption"
             delay={1.1}
+          />
+          <StatCard
+            title="Grid Exported"
+            value={energyStats.gridExportEnergy.toFixed(1)}
+            unit="kWh"
+            icon={ArrowUp}
+            variant="grid"
+            delay={1.2}
           />
         </div>
 

@@ -32,8 +32,8 @@ export const NewDashboardPage: React.FC = () => {
           const inverterParam = selectedInverter === 'all' ? 'all' : selectedInverter
           response = await api.get(`/api/now?inverter_id=${inverterParam}&array_id=${selectedArray}`)
         } else {
-          // System-level: use system aggregation endpoint
-          response = await api.get('/api/system/now')
+          // Home-level: use home aggregation endpoint
+          response = await api.get('/api/home/now')
           if (response?.system) {
             // Map system telemetry to match expected format
             const home = response.system

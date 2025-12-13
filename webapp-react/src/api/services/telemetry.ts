@@ -42,11 +42,11 @@ export const telemetryService = {
   },
 
   /**
-   * Get system-level aggregated telemetry
+   * Get home-level aggregated telemetry
    */
-  async getSystemNow(): Promise<HomeTelemetryData> {
+  async getHomeNow(): Promise<HomeTelemetryData> {
     const response = await api.get<BackendHomeTelemetryResponse>(
-      '/api/system/now',
+      '/api/home/now',
       { ttl: CACHE_TTL.TELEMETRY, key: 'telemetry:home' }
     )
     

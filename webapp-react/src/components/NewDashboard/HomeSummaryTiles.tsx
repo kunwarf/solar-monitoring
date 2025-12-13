@@ -148,7 +148,7 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           periodParams.append('start_date', customStartDate)
           periodParams.append('end_date', customEndDate)
         }
-        const homeTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
+        const systemTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
         
         if (!isMounted) return
         
@@ -156,7 +156,7 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
         
         if (config?.home) {
           const homeConfig = config.home
-          const homeTel = homeTelemetryRes?.home
+          const systemTel = systemTelemetryRes?.home
           
           // Count arrays, inverters, and battery banks
           const arrayCount = config?.arrays?.length || 0
@@ -165,8 +165,8 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           
           // Get array data from home telemetry
           const arrays: ArrayData[] = []
-          if (homeTel?.arrays && Array.isArray(homeTel.arrays)) {
-            for (const arr of homeTel.arrays) {
+          if (systemTel?.arrays && Array.isArray(systemTel.arrays)) {
+            for (const arr of systemTel.arrays) {
               const arrayConfig = config?.arrays?.find((a: any) => a.id === arr.array_id)
               const inverterIds = arrayConfig?.inverter_ids || []
               
@@ -338,8 +338,8 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           
           // Get meter data from home telemetry
           const meters: MeterData[] = []
-          if (homeTel?.meters && Array.isArray(homeTel.meters)) {
-            homeTel.meters.forEach((meter: any) => {
+          if (systemTel?.meters && Array.isArray(systemTel.meters)) {
+            systemTel.meters.forEach((meter: any) => {
               meters.push({
                 meter_id: meter.meter_id,
                 power_w: meter.power_w,
@@ -354,14 +354,14 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
             id: homeConfig.id || 'home',
             name: homeConfig.name || 'My Solar Home',
             description: homeConfig.description,
-            total_pv_power_w: homeTel?.total_pv_power_w,
-            total_load_power_w: homeTel?.total_load_power_w,
-            total_grid_power_w: homeTel?.total_grid_power_w,
-            total_batt_power_w: homeTel?.total_batt_power_w,
-            avg_batt_soc_pct: homeTel?.avg_batt_soc_pct,
-            daily_energy: homeTel?.daily_energy,
-            monthly_energy: homeTel?.monthly_energy,
-            financial_metrics: homeTel?.financial_metrics,
+            total_pv_power_w: systemTel?.total_pv_power_w,
+            total_load_power_w: systemTel?.total_load_power_w,
+            total_grid_power_w: systemTel?.total_grid_power_w,
+            total_batt_power_w: systemTel?.total_batt_power_w,
+            avg_batt_soc_pct: systemTel?.avg_batt_soc_pct,
+            daily_energy: systemTel?.daily_energy,
+            monthly_energy: systemTel?.monthly_energy,
+            financial_metrics: systemTel?.financial_metrics,
             arrays,
             battery_bank_arrays: batteryBankArrays,
             meters,
@@ -408,19 +408,19 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           periodParams.append('start_date', customStartDate)
           periodParams.append('end_date', customEndDate)
         }
-        const homeTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
+        const systemTelemetryRes: any = await api.get(`/api/home/now?${periodParams.toString()}`).catch(() => null)
         if (!isMounted) return
         
-        const homeTel = homeTelemetryRes?.home
-        if (homeTel) {
+        const systemTel = systemTelemetryRes?.home
+        if (systemTel) {
           // Get config to map array names
           const configRes: any = await api.get('/api/config').catch(() => null)
           const config = configRes?.config || configRes
           
           // Update arrays data with individual inverter telemetry
           const updatedArrays: ArrayData[] = []
-          if (homeTel?.arrays && Array.isArray(homeTel.arrays)) {
-            for (const arr of homeTel.arrays) {
+          if (systemTel?.arrays && Array.isArray(systemTel.arrays)) {
+            for (const arr of systemTel.arrays) {
               const arrayConfig = config?.arrays?.find((a: any) => a.id === arr.array_id)
               const inverterIds = arrayConfig?.inverter_ids || []
               
@@ -485,8 +485,8 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
           
           // Update meters data
           const updatedMeters: MeterData[] = []
-          if (homeTel?.meters && Array.isArray(homeTel.meters) && homeTel.meters.length > 0) {
-            homeTel.meters.forEach((meter: any) => {
+          if (systemTel?.meters && Array.isArray(systemTel.meters) && systemTel.meters.length > 0) {
+            systemTel.meters.forEach((meter: any) => {
               // Handle both power_w and grid_power_w field names
               const power = meter.power_w !== undefined ? meter.power_w : meter.grid_power_w
               const voltage = meter.voltage_v !== undefined ? meter.voltage_v : meter.grid_voltage_v
@@ -636,14 +636,14 @@ export const HomeSummaryTiles: React.FC<HomeSummaryTilesProps> = ({
             
             return {
               ...home,
-              total_pv_power_w: homeTel?.total_pv_power_w,
-              total_load_power_w: homeTel?.total_load_power_w,
-              total_grid_power_w: homeTel?.total_grid_power_w,
-              total_batt_power_w: homeTel?.total_batt_power_w,
-              avg_batt_soc_pct: homeTel?.avg_batt_soc_pct,
-              daily_energy: homeTel?.daily_energy,
-              monthly_energy: homeTel?.monthly_energy,
-              financial_metrics: homeTel?.financial_metrics,
+              total_pv_power_w: systemTel?.total_pv_power_w,
+              total_load_power_w: systemTel?.total_load_power_w,
+              total_grid_power_w: systemTel?.total_grid_power_w,
+              total_batt_power_w: systemTel?.total_batt_power_w,
+              avg_batt_soc_pct: systemTel?.avg_batt_soc_pct,
+              daily_energy: systemTel?.daily_energy,
+              monthly_energy: systemTel?.monthly_energy,
+              financial_metrics: systemTel?.financial_metrics,
               arrays: updatedArrays.length > 0 ? updatedArrays : home.arrays,
               battery_bank_arrays: updatedBatteryBankArrays || home.battery_bank_arrays,
               meters: updatedMeters.length > 0 ? updatedMeters : home.meters,
