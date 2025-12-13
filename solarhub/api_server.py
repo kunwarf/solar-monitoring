@@ -1219,7 +1219,7 @@ def create_api(solar_app) -> FastAPI:
             
             # Get billing config for calculations
             billing_cfg = getattr(solar_app.cfg, 'billing', None) if solar_app and hasattr(solar_app, 'cfg') else None
-            log.debug(f"API /api/home/now: billing_cfg = {billing_cfg is not None}, has arrays = {bool(solar_app.cfg.arrays if solar_app and hasattr(solar_app, 'cfg') else False)}, has logger = {bool(solar_app.logger if solar_app else False)}")
+            log.debug(f"API /api/system/now: billing_cfg = {billing_cfg is not None}, has arrays = {bool(solar_app.cfg.arrays if solar_app and hasattr(solar_app, 'cfg') else False)}, has logger = {bool(solar_app.logger if solar_app else False)}")
             
             # Use existing billing scheduler to get current month's bill
             try:
@@ -1259,7 +1259,7 @@ def create_api(solar_app) -> FastAPI:
                                 financial_metrics["total_bill_pkr"] = round(bill_final or 0.0, 2)
                                 monthly_energy["grid_import_energy_kwh"] = round((import_off or 0.0) + (import_peak or 0.0), 2)
                                 monthly_energy["grid_export_energy_kwh"] = round((export_off or 0.0) + (export_peak or 0.0), 2)
-                                log.debug(f"API /api/home/now: Using billing_daily snapshot from DB - bill: {financial_metrics['total_bill_pkr']} PKR")
+                                log.debug(f"API /api/system/now: Using billing_daily snapshot from DB - bill: {financial_metrics['total_bill_pkr']} PKR")
                             else:
                                 # No snapshot in DB yet, compute it using scheduler logic
                                 log.debug("API /api/home/now: No billing_daily snapshot found, computing...")
@@ -1282,7 +1282,7 @@ def create_api(solar_app) -> FastAPI:
                                     monthly_energy["grid_export_energy_kwh"] = round(
                                         snapshot.export_off_kwh + snapshot.export_peak_kwh, 2
                                     )
-                                    log.debug(f"API /api/home/now: Computed billing snapshot - bill: {financial_metrics['total_bill_pkr']} PKR")
+                                    log.debug(f"API /api/system/now: Computed billing snapshot - bill: {financial_metrics['total_bill_pkr']} PKR")
                         except Exception as e:
                             log.debug(f"Error reading from billing_daily table: {e}, computing snapshot...")
                             # Fallback: compute snapshot
@@ -1325,7 +1325,7 @@ def create_api(solar_app) -> FastAPI:
                             )
                             monthly_energy["solar_energy_kwh"] = round(month_energy_to_date.solar_kwh, 2)
                             
-                            log.debug(f"API /api/home/now: Solar energy from billing calculation: {monthly_energy['solar_energy_kwh']} kWh")
+                            log.debug(f"API /api/system/now: Solar energy from billing calculation: {monthly_energy['solar_energy_kwh']} kWh")
                         except Exception as e:
                             log.debug(f"Error getting solar energy from billing calculation: {e}")
                             # Fallback: calculate solar separately
@@ -1371,11 +1371,11 @@ def create_api(solar_app) -> FastAPI:
                         co2_prevented = monthly_energy["solar_energy_kwh"] * co2_emission_factor
                         financial_metrics["co2_prevented_kg"] = round(co2_prevented, 2)
                         
-                        log.debug(f"API /api/home/now: Financial metrics - bill: {financial_metrics['total_bill_pkr']} PKR, saved: {financial_metrics['total_saved_pkr']} PKR, CO2: {financial_metrics['co2_prevented_kg']} kg")
+                        log.debug(f"API /api/system/now: Financial metrics - bill: {financial_metrics['total_bill_pkr']} PKR, saved: {financial_metrics['total_saved_pkr']} PKR, CO2: {financial_metrics['co2_prevented_kg']} kg")
                 else:
                     log.debug("API /api/home/now: Skipping monthly energy calculation - missing arrays, logger, or logger.path")
             except Exception as e:
-                log.error(f"API /api/home/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
+                log.error(f"API /api/system/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
             
             # Convert home_tel to dict, ensuring no circular references
             # Manually extract only primitive fields to avoid any nested object issues
@@ -1660,7 +1660,7 @@ def create_api(solar_app) -> FastAPI:
                 "system": home_dict  # Frontend expects "system" key
             }
         except Exception as e:
-            log.error(f"Error in /api/home/now: {e}", exc_info=True)
+            log.error(f"Error in /api/system/now: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
     
     @app.get("/api/now")
