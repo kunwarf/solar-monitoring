@@ -69,8 +69,22 @@ export const telemetryService = {
           for (const inv of invArray.inverters) {
             if (inv.telemetry && inv.inverter_id) {
               try {
+                // Backend provides telemetry with fields like pv_power_w, load_power_w, etc.
+                // Convert to format expected by normalizeTelemetry
+                const telemetryData = {
+                  ts: inv.telemetry.ts || new Date().toISOString(),
+                  pv_power_w: inv.telemetry.pv_power_w || 0,
+                  load_power_w: inv.telemetry.load_power_w || 0,
+                  grid_power_w: inv.telemetry.grid_power_w || 0,
+                  batt_power_w: inv.telemetry.batt_power_w || 0,
+                  batt_soc_pct: inv.telemetry.batt_soc_pct || null,
+                  batt_voltage_v: inv.telemetry.batt_voltage_v || null,
+                  batt_current_a: inv.telemetry.batt_current_a || null,
+                  inverter_temp_c: inv.telemetry.inverter_temp_c || null,
+                  _metadata: {},
+                }
                 // Normalize the telemetry data
-                const invTelemetry = normalizeTelemetry(inv.telemetry, 'inverter', inv.inverter_id)
+                const invTelemetry = normalizeTelemetry(telemetryData, 'inverter', inv.inverter_id)
                 // Update the hierarchy object
                 manager.updateTelemetry(inv.inverter_id, invTelemetry)
               } catch (err) {
