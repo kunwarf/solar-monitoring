@@ -226,7 +226,7 @@ export const telemetryService = {
     }
     
     // Normalize and update hierarchy for each battery
-    return batteriesToProcess.map(bat => {
+    const normalizedBatteries = batteriesToProcess.map(bat => {
       const normalized = normalizeBatteryData(bat)
       // Add configured_banks to raw data for name lookup
       if (normalized.raw) {
@@ -238,6 +238,13 @@ export const telemetryService = {
       
       return normalized
     })
+    
+    // Return single battery if bankId was specified, otherwise return array
+    if (bankId && normalizedBatteries.length === 1) {
+      return normalizedBatteries[0]
+    }
+    
+    return normalizedBatteries
   },
 }
 
