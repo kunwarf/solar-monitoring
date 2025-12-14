@@ -2,7 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import { Zap, ArrowUpRight, ArrowDownLeft, Activity, Gauge, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useHomeTelemetry, useHourlyEnergy } from "@root/api/hooks";
+import { useHomeTelemetry, useHourlyEnergy, useMeterTelemetry } from "@root/api/hooks";
 import { useDevicesData } from "@/data/mockDataHooks";
 import {
   BarChart,
@@ -95,25 +95,25 @@ const PhaseCard = ({ data, index }: { data: PhaseData; index: number }) => (
     <div className="grid grid-cols-2 gap-3">
       <div>
         <p className="text-xs text-muted-foreground mb-0.5">Voltage</p>
-        <p className="text-lg font-mono font-bold text-foreground">{data.voltage}V</p>
+        <p className="text-lg font-mono font-bold text-foreground">{data.voltage.toFixed(3)}V</p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground mb-0.5">Current</p>
-        <p className="text-lg font-mono font-bold text-foreground">{data.current}A</p>
+        <p className="text-lg font-mono font-bold text-foreground">{data.current.toFixed(2)}A</p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground mb-0.5">Power</p>
         <p className={cn(
           "text-lg font-mono font-bold",
           data.direction === "export" ? "text-success" : "text-warning"
-        )}>{data.power}kW</p>
+        )}>{data.power.toFixed(2)}kW</p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground mb-0.5">Power Factor</p>
         <p className={cn(
           "text-lg font-mono font-bold",
           data.powerFactor >= 0.95 ? "text-success" : data.powerFactor >= 0.9 ? "text-warning" : "text-destructive"
-        )}>{data.powerFactor}</p>
+        )}>{data.powerFactor.toFixed(2)}</p>
       </div>
     </div>
     
@@ -139,18 +139,28 @@ const PhaseCard = ({ data, index }: { data: PhaseData; index: number }) => (
 );
 
 const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
-  // Fetch home telemetry to get meter data
-  const { data: homeTelemetry } = useHomeTelemetry({ refetchInterval: 5000 });
+  // Fetch dedicated meter telemetry from /api/meter/now
+  const { data: meterTelemetry, isLoading: meterLoading, error: meterError } = useMeterTelemetry(device.id, { refetchInterval: 5000 });
   
   // Fetch hourly energy for charts
   const { data: hourlyData } = useHourlyEnergy({ inverterId: undefined });
   
-  // Get devices to find meter info
+  // Get devices to find meter info (fallback)
   const devices = useDevicesData();
   const meterDevice = devices.find(d => d.id === device.id && d.type === "meter");
   
-  // Get meter data from home telemetry
-  const meterData = homeTelemetry?.meters?.find(m => m.id === device.id);
+  // Show loading or error state
+  if (meterLoading) {
+    return <div className="text-center py-8 text-muted-foreground">Loading meter telemetry...</div>;
+  }
+  
+  if (meterError) {
+    return <div className="text-center py-8 text-destructive">Error loading meter telemetry: {String(meterError)}</div>;
+  }
+  
+  if (!meterTelemetry) {
+    return <div className="text-center py-8 text-muted-foreground">No meter telemetry data available. Meter may not be connected or polling.</div>;
+  }
   
   // Calculate today's stats from hourly data
   const todayStats = React.useMemo(() => {
@@ -188,50 +198,57 @@ const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
     };
   }, [hourlyData]);
   
-  // Use meter data or fallback
-  const currentPower = meterData?.power ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Power")?.value || "0") : 0);
-  const importKwh = meterData?.importKwh ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Import")?.value || "0") : 0);
-  const exportKwh = meterData?.exportKwh ?? (meterDevice ? parseFloat(meterDevice.metrics.find(m => m.label === "Export")?.value || "0") : 0);
+  // Extract meter data from telemetry
+  // Backend returns: grid_power_w (positive = import, negative = export)
+  const currentPower = meterTelemetry?.grid_power_w ? meterTelemetry.grid_power_w / 1000 : 0; // Convert W to kW
+  const importKwh = meterTelemetry?.grid_import_wh ? meterTelemetry.grid_import_wh / 1000 : 0; // Convert Wh to kWh
+  const exportKwh = meterTelemetry?.grid_export_wh ? meterTelemetry.grid_export_wh / 1000 : 0; // Convert Wh to kWh
+  const gridVoltage = meterTelemetry?.grid_voltage_v || null;
+  const gridCurrent = meterTelemetry?.grid_current_a || null;
+  const gridFrequency = meterTelemetry?.grid_frequency_hz || null;
+  const powerFactor = meterTelemetry?.power_factor || null;
   
-  // Generate phase data (if three-phase, otherwise single phase)
-  const isThreePhase = homeTelemetry?.isThreePhase ?? false;
-  const phaseData = isThreePhase && homeTelemetry ? [
+  // Check if three-phase meter (has phase-specific data)
+  const isThreePhase = !!(meterTelemetry?.voltage_phase_a || meterTelemetry?.voltage_phase_b || meterTelemetry?.voltage_phase_c);
+  
+  // Generate phase data from real meter telemetry
+  const phaseData = isThreePhase && meterTelemetry ? [
     {
       phase: "L1",
-      voltage: 238.0, // Not available in API, using placeholder
-      current: Math.abs(homeTelemetry.loadL1 ?? 0) * 1000 / 238, // Estimate from power
-      power: Math.abs(homeTelemetry.loadL1 ?? 0),
-      powerFactor: 0.97,
-      direction: (homeTelemetry.gridL1 ?? 0) < 0 ? "export" as const : "import" as const,
-      frequency: 50.0,
+      voltage: meterTelemetry.voltage_phase_a || meterTelemetry.grid_voltage_v || 0,
+      current: meterTelemetry.current_phase_a || 0,
+      power: meterTelemetry.power_phase_a ? meterTelemetry.power_phase_a / 1000 : 0, // Convert W to kW
+      powerFactor: powerFactor || 0.97,
+      direction: (meterTelemetry.power_phase_a ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: gridFrequency || 50.0,
     },
     {
       phase: "L2",
-      voltage: 238.0,
-      current: Math.abs(homeTelemetry.loadL2 ?? 0) * 1000 / 238,
-      power: Math.abs(homeTelemetry.loadL2 ?? 0),
-      powerFactor: 0.95,
-      direction: (homeTelemetry.gridL2 ?? 0) < 0 ? "export" as const : "import" as const,
-      frequency: 50.0,
+      voltage: meterTelemetry.voltage_phase_b || meterTelemetry.grid_voltage_v || 0,
+      current: meterTelemetry.current_phase_b || 0,
+      power: meterTelemetry.power_phase_b ? meterTelemetry.power_phase_b / 1000 : 0,
+      powerFactor: powerFactor || 0.95,
+      direction: (meterTelemetry.power_phase_b ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: gridFrequency || 50.0,
     },
     {
       phase: "L3",
-      voltage: 238.0,
-      current: Math.abs(homeTelemetry.loadL3 ?? 0) * 1000 / 238,
-      power: Math.abs(homeTelemetry.loadL3 ?? 0),
-      powerFactor: 0.96,
-      direction: (homeTelemetry.gridL3 ?? 0) < 0 ? "export" as const : "import" as const,
-      frequency: 50.0,
+      voltage: meterTelemetry.voltage_phase_c || meterTelemetry.grid_voltage_v || 0,
+      current: meterTelemetry.current_phase_c || 0,
+      power: meterTelemetry.power_phase_c ? meterTelemetry.power_phase_c / 1000 : 0,
+      powerFactor: powerFactor || 0.96,
+      direction: (meterTelemetry.power_phase_c ?? 0) < 0 ? "export" as const : "import" as const,
+      frequency: gridFrequency || 50.0,
     },
   ] : [
     {
       phase: "L1",
-      voltage: 238.0,
-      current: Math.abs(currentPower) * 1000 / 238,
+      voltage: gridVoltage || 0,
+      current: gridCurrent || 0,
       power: Math.abs(currentPower),
-      powerFactor: 0.97,
+      powerFactor: powerFactor || 0.97,
       direction: currentPower < 0 ? "export" as const : "import" as const,
-      frequency: 50.0,
+      frequency: gridFrequency || 50.0,
     },
   ];
   
@@ -340,7 +357,7 @@ const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
         <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-border/30">
           <div className="text-center">
             <p className="text-xs text-muted-foreground mb-1">Avg Voltage</p>
-            <p className="text-lg font-mono font-bold text-foreground">{avgVoltage.toFixed(1)}V</p>
+            <p className="text-lg font-mono font-bold text-foreground">{avgVoltage.toFixed(3)}V</p>
           </div>
           <div className="text-center">
             <p className="text-xs text-muted-foreground mb-1">Frequency</p>

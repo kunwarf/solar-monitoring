@@ -75,3 +75,23 @@ export function useBatteryTelemetry(
   })
 }
 
+/**
+ * Hook to fetch meter telemetry
+ */
+export function useMeterTelemetry(
+  meterId: string,
+  options?: {
+    enabled?: boolean
+    refetchInterval?: number
+  }
+) {
+  return useQuery({
+    queryKey: ['telemetry', 'meter', meterId],
+    queryFn: () => telemetryService.getMeterNow(meterId),
+    enabled: options?.enabled !== false && !!meterId,
+    refetchInterval: options?.refetchInterval || 5000,
+    staleTime: 3000,
+    retry: false, // Don't retry if meter data is not available
+  })
+}
+

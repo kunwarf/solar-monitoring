@@ -40,7 +40,8 @@ export interface BackendHomeTelemetryResponse {
 }
 
 export interface BackendHomeTelemetry {
-  home_id: string
+  home_id?: string  // Legacy field
+  system_id?: string  // New field
   ts: string
   total_pv_power_w?: number
   total_load_power_w?: number

@@ -110,12 +110,12 @@ const formatPower = (power: number): { value: string; unit: string } => {
   const absPower = Math.abs(power);
   if (absPower < 1.0) {
     return {
-      value: (absPower * 1000).toFixed(0),
+      value: (absPower * 1000).toFixed(2),
       unit: "W"
     };
   }
   return {
-    value: absPower.toFixed(1),
+    value: absPower.toFixed(2),
     unit: "kW"
   };
 };
@@ -491,7 +491,7 @@ export function EnergyFlowDiagram({
           <EnergyNode
             icon={Sun}
             label="Solar"
-            value={solarPower.toFixed(1)}
+            value={solarPower.toFixed(2)}
             unit="kW"
             color={colors.solar}
             position={positions.solar}
@@ -511,7 +511,7 @@ export function EnergyFlowDiagram({
           <EnergyNode
             icon={Home}
             label="Home"
-            value={consumption.toFixed(1)}
+            value={consumption.toFixed(2)}
             unit="kW"
             color={colors.home}
             position={positions.home}
@@ -521,7 +521,7 @@ export function EnergyFlowDiagram({
           <EnergyNode
             icon={Zap}
             label={isGridExporting ? "Exporting" : "Importing"}
-            value={Math.abs(gridPower).toFixed(1)}
+            value={Math.abs(gridPower).toFixed(2)}
             unit="kW"
             color={colors.grid}
             position={positions.grid}

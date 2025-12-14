@@ -40,7 +40,7 @@ const Index = () => {
           />
           <StatCard
             title="CO₂ Saved Today"
-            value={energyStats.co2Saved.toFixed(1)}
+            value={energyStats.co2Saved.toFixed(2)}
             unit="kg"
             icon={Leaf}
             variant="environment"
@@ -49,7 +49,7 @@ const Index = () => {
           />
           <StatCard
             title="Battery Charge Energy"
-            value={energyStats.batteryChargeEnergy.toFixed(1)}
+            value={energyStats.batteryChargeEnergy.toFixed(2)}
             unit="kWh"
             icon={ArrowDown}
             variant="battery"
@@ -57,7 +57,7 @@ const Index = () => {
           />
           <StatCard
             title="Battery Discharge Energy"
-            value={energyStats.batteryDischargeEnergy.toFixed(1)}
+            value={energyStats.batteryDischargeEnergy.toFixed(2)}
             unit="kWh"
             icon={ArrowUp}
             variant="battery"
@@ -65,7 +65,7 @@ const Index = () => {
           />
           <StatCard
             title="Load Energy"
-            value={energyStats.loadEnergy.toFixed(1)}
+            value={energyStats.loadEnergy.toFixed(2)}
             unit="kWh"
             icon={Home}
             variant="consumption"
@@ -77,7 +77,7 @@ const Index = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             title="Grid Import"
-            value={energyStats.gridImportEnergy.toFixed(1)}
+            value={energyStats.gridImportEnergy.toFixed(2)}
             unit="kWh"
             icon={ArrowDown}
             variant="grid"
@@ -85,7 +85,7 @@ const Index = () => {
           />
           <StatCard
             title="Today's Production"
-            value={energyStats.dailyProduction.toFixed(1)}
+            value={energyStats.dailyProduction.toFixed(2)}
             unit="kWh"
             icon={Sun}
             variant="solar"
@@ -93,7 +93,7 @@ const Index = () => {
           />
           <StatCard
             title="Predicted vs Actual"
-            value={`${energyStats.dailyProduction.toFixed(0)}/${energyStats.dailyPrediction.toFixed(0)}`}
+            value={`${energyStats.dailyProduction.toFixed(2)}/${energyStats.dailyPrediction.toFixed(2)}`}
             unit="kWh"
             icon={Target}
             variant="prediction"
@@ -109,7 +109,7 @@ const Index = () => {
           />
           <StatCard
             title="Self-Consumption"
-            value={energyStats.selfConsumption.toString()}
+            value={energyStats.selfConsumption.toFixed(2)}
             unit="%"
             icon={Home}
             variant="consumption"
@@ -117,7 +117,7 @@ const Index = () => {
           />
           <StatCard
             title="Grid Exported"
-            value={energyStats.gridExportEnergy.toFixed(1)}
+            value={energyStats.gridExportEnergy.toFixed(2)}
             unit="kWh"
             icon={ArrowUp}
             variant="grid"

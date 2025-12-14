@@ -290,7 +290,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
           <PowerFlowCard
             icon={Sun}
             label="Solar Input"
-            value={powerFlowData.solarPower.toFixed(1)}
+            value={powerFlowData.solarPower.toFixed(2)}
             unit="kW"
             color="bg-solar/20 text-solar"
             direction="in"
@@ -299,7 +299,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
           <PowerFlowCard
             icon={Battery}
             label="Battery"
-            value={powerFlowData.batteryPower.toFixed(1)}
+            value={powerFlowData.batteryPower.toFixed(2)}
             unit="kW"
             color="bg-battery/20 text-battery"
             direction={powerFlowData.batteryPower > 0 ? "in" : "out"}
@@ -308,7 +308,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
           <PowerFlowCard
             icon={Home}
             label="Load"
-            value={powerFlowData.loadPower.toFixed(1)}
+            value={powerFlowData.loadPower.toFixed(2)}
             unit="kW"
             color="bg-consumption/20 text-consumption"
             direction="out"
@@ -317,7 +317,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
           <PowerFlowCard
             icon={Zap}
             label="Grid"
-            value={Math.abs(powerFlowData.gridPower).toFixed(1)}
+            value={Math.abs(powerFlowData.gridPower).toFixed(2)}
             unit="kW"
             color="bg-grid/20 text-grid"
             direction={powerFlowData.isGridExporting ? "out" : "in"}
@@ -392,7 +392,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
                       <Zap className="w-3 h-3 text-primary" />
                       <span className="text-[10px] uppercase text-muted-foreground">Voltage</span>
                     </div>
-                    <p className="text-lg font-mono font-bold text-foreground">{array.voltage.toFixed(1)}</p>
+                    <p className="text-lg font-mono font-bold text-foreground">{array.voltage.toFixed(3)}</p>
                     <p className="text-[10px] text-muted-foreground">V</p>
                   </div>
                   <div className="bg-background/50 rounded-lg p-2.5 text-center">
@@ -444,7 +444,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
                     <Zap className="w-3 h-3 text-primary" />
                     <span className="text-[10px] uppercase text-muted-foreground">Voltage</span>
                   </div>
-                  <p className="text-lg font-mono font-bold text-foreground">380.0</p>
+                  <p className="text-lg font-mono font-bold text-foreground">380.000</p>
                   <p className="text-[10px] text-muted-foreground">V</p>
                 </div>
                 <div className="bg-background/50 rounded-lg p-2.5 text-center">
@@ -478,35 +478,35 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
               <Zap className="w-4 h-4 text-solar" />
               <span className="text-xs text-muted-foreground">DC Voltage</span>
             </div>
-            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.dcVoltage}V</p>
+            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.dcVoltage.toFixed(3)}V</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <Activity className="w-4 h-4 text-grid" />
               <span className="text-xs text-muted-foreground">AC Voltage</span>
             </div>
-            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.acVoltage}V</p>
+            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.acVoltage.toFixed(3)}V</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <Activity className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Frequency</span>
             </div>
-            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.frequency}Hz</p>
+            <p className="text-xl font-mono font-bold text-foreground">{powerFlowData.frequency.toFixed(2)}Hz</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <Gauge className="w-4 h-4 text-success" />
               <span className="text-xs text-muted-foreground">Efficiency</span>
             </div>
-            <p className="text-xl font-mono font-bold text-success">{powerFlowData.efficiency}%</p>
+            <p className="text-xl font-mono font-bold text-success">{powerFlowData.efficiency.toFixed(2)}%</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <Battery className="w-4 h-4 text-battery" />
               <span className="text-xs text-muted-foreground">Battery SOC</span>
             </div>
-            <p className="text-xl font-mono font-bold text-battery">{powerFlowData.batterySoc}%</p>
+            <p className="text-xl font-mono font-bold text-battery">{powerFlowData.batterySoc.toFixed(2)}%</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
@@ -516,7 +516,7 @@ const InverterTelemetry = ({ device }: InverterTelemetryProps) => {
             <p className={cn(
               "text-xl font-mono font-bold",
               powerFlowData.temperature > 50 ? "text-destructive" : powerFlowData.temperature > 45 ? "text-warning" : "text-foreground"
-            )}>{powerFlowData.temperature}°C</p>
+            )}>{powerFlowData.temperature.toFixed(2)}°C</p>
           </div>
         </div>
       </motion.div>

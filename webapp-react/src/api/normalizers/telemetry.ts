@@ -15,7 +15,7 @@ export function normalizeTelemetry(
   data: BackendTelemetryData | any, // Allow any for meter data
   source: 'inverter' | 'array' | 'home' | 'meter' = 'inverter',
   sourceId?: string
-): TelemetryData {
+): TelemetryData & { source: 'inverter' | 'array' | 'home' } {
   return {
     ts: data.ts,
     pvPower: (data.pv_power_w || 0) / 1000, // Convert W to kW
@@ -40,10 +40,10 @@ export function normalizeTelemetry(
       isSingleInverter: data._metadata?.is_single_inverter ?? false,
       isInverterArray: data._metadata?.is_inverter_array ?? false,
     },
-    source,
+    source: (source === 'meter' ? 'home' : source) as 'inverter' | 'array' | 'home',
     sourceId,
     raw: data,
-  }
+  } as TelemetryData
 }
 
 /**
@@ -63,11 +63,12 @@ export function normalizeHomeTelemetry(
       _metadata: data._metadata || data.metadata,
     },
     'home',
-    data.home_id
+    (data as any).system_id || (data as any).home_id || 'system'
   )
 
   return {
     ...base,
+    source: 'home' as const, // Override source to ensure it's 'home' for HomeTelemetryData
     arrays: data.arrays?.map((arr) => ({
       id: arr.array_id,
       name: arr.name,
@@ -76,14 +77,14 @@ export function normalizeHomeTelemetry(
       gridPower: (arr.grid_power_w || 0) / 1000,
       batteryPower: (arr.batt_power_w || 0) / 1000,
       batterySoc: arr.batt_soc_pct ?? null,
-    })),
+    })) || [],
     meters: data.meters?.map((meter) => ({
       id: meter.meter_id,
       name: meter.name,
       power: (meter.power_w || 0) / 1000,
       importKwh: meter.import_kwh || 0,
       exportKwh: meter.export_kwh || 0,
-    })),
+    })) || [],
     financialMetrics: data.financial_metrics ? {
       totalBillPkr: data.financial_metrics.total_bill_pkr || 0,
       totalSavedPkr: data.financial_metrics.total_saved_pkr || 0,

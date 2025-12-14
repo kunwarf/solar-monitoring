@@ -235,7 +235,7 @@ const CellVisual = ({ cell, index }: { cell: CellData; index: number }) => {
                 <span className="text-muted-foreground">Voltage:</span>
               </div>
               <span className={cn("font-mono", getVoltageColor(cell.voltage))}>
-                {cell.voltage}V
+                {cell.voltage.toFixed(3)}V
               </span>
               
               <div className="flex items-center gap-1">
@@ -243,17 +243,17 @@ const CellVisual = ({ cell, index }: { cell: CellData; index: number }) => {
                 <span className="text-muted-foreground">Temp:</span>
               </div>
               <span className={cn("font-mono", getTempColor(cell.temperature))}>
-                {cell.temperature}°C
+                {cell.temperature.toFixed(2)}°C
               </span>
               
               <div className="flex items-center gap-1">
                 <Battery className="w-3 h-3 text-battery" />
                 <span className="text-muted-foreground">SOC:</span>
               </div>
-              <span className="font-mono text-battery">{cell.soc}%</span>
+              <span className="font-mono text-battery">{cell.soc.toFixed(2)}%</span>
               
               <span className="text-muted-foreground">Health:</span>
-              <span className="font-mono text-foreground">{cell.health}%</span>
+              <span className="font-mono text-foreground">{cell.health.toFixed(2)}%</span>
               
               <span className="text-muted-foreground">Status:</span>
               <span className={cn(
@@ -293,7 +293,7 @@ const PackStats = ({ cells }: { cells: CellData[] }) => {
           "text-sm font-mono font-bold",
           deltaVoltage > 0.1 ? "text-warning" : "text-success"
         )}>
-          {(deltaVoltage * 1000).toFixed(0)}mV
+          {deltaVoltage.toFixed(3)}V
         </p>
       </div>
       <div className="bg-secondary/30 rounded-md px-2 py-1.5">
@@ -302,12 +302,12 @@ const PackStats = ({ cells }: { cells: CellData[] }) => {
           "text-sm font-mono font-bold",
           avgTemp > 40 ? "text-warning" : "text-foreground"
         )}>
-          {avgTemp.toFixed(1)}°C
+          {avgTemp.toFixed(2)}°C
         </p>
       </div>
       <div className="bg-secondary/30 rounded-md px-2 py-1.5">
         <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Pack SOC</p>
-        <p className="text-sm font-mono font-bold text-battery">{avgSoc.toFixed(1)}%</p>
+        <p className="text-sm font-mono font-bold text-battery">{avgSoc.toFixed(2)}%</p>
       </div>
     </div>
   );
@@ -394,34 +394,43 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
     
     // Aggregate from all devices if available
     if (battery.devices && battery.devices.length > 0) {
-      const totalVoltage = battery.devices.reduce((sum: number, dev: any) => sum + (dev.voltage || 0), 0);
+      // Average voltage (batteries in parallel have same voltage)
+      const voltages = battery.devices.map((dev: any) => dev.voltage || 0).filter((v: number) => v > 0);
+      const avgVoltage = voltages.length > 0 ? voltages.reduce((sum: number, v: number) => sum + v, 0) / voltages.length : 0;
+      
+      // Sum current and power (batteries in parallel: currents add, powers add)
       const totalCurrent = battery.devices.reduce((sum: number, dev: any) => sum + (dev.current || 0), 0);
+      const totalPower = battery.devices.reduce((sum: number, dev: any) => {
+        const devPower = dev.power || ((dev.voltage || 0) * (dev.current || 0) / 1000);
+        return sum + devPower;
+      }, 0);
+      
       const avgSoc = battery.devices.reduce((sum: number, dev: any) => sum + (dev.soc || 0), 0) / battery.devices.length;
       const avgTemp = battery.devices.reduce((sum: number, dev: any) => sum + (dev.temperature || 0), 0) / battery.devices.length;
       const totalCycles = battery.devices.reduce((sum: number, dev: any) => sum + (dev.cycles || 0), 0);
       const avgSoh = battery.devices.reduce((sum: number, dev: any) => sum + (dev.soh || 0), 0) / battery.devices.length;
       
       return {
-        totalVoltage: totalVoltage || battery.voltage || 0,
-        totalCurrent: totalCurrent || battery.current || 0,
-        totalPower: (totalCurrent || battery.current || 0) * (totalVoltage || battery.voltage || 0) / 1000,
-        soc: avgSoc || battery.soc || 0,
-        health: avgSoh || 94,
+        totalVoltage: Number((avgVoltage || battery.voltage || 0).toFixed(3)),
+        totalCurrent: Number((totalCurrent || battery.current || 0).toFixed(2)),
+        totalPower: Number((totalPower || (totalCurrent || battery.current || 0) * (avgVoltage || battery.voltage || 0) / 1000).toFixed(2)),
+        soc: Number((avgSoc || battery.soc || 0).toFixed(2)),
+        health: Number((avgSoh || 94).toFixed(2)),
         cycles: totalCycles || 0,
-        temperature: avgTemp || battery.temperature || 0,
+        temperature: Number((avgTemp || battery.temperature || 0).toFixed(2)),
         status: (totalCurrent || battery.current || 0) >= 0 ? "charging" as const : "discharging" as const,
       };
     }
     
     // Fallback to battery-level data
     return {
-      totalVoltage: battery.voltage ?? 0,
-      totalCurrent: battery.current ?? 0,
-      totalPower: (battery.current ?? 0) * (battery.voltage ?? 0) / 1000,
-      soc: battery.soc ?? 0,
+      totalVoltage: Number((battery.voltage ?? 0).toFixed(3)),
+      totalCurrent: Number((battery.current ?? 0).toFixed(2)),
+      totalPower: Number(((battery.current ?? 0) * (battery.voltage ?? 0) / 1000).toFixed(2)),
+      soc: Number((battery.soc ?? 0).toFixed(2)),
       health: 94,
       cycles: 0,
-      temperature: battery.temperature ?? 0,
+      temperature: Number((battery.temperature ?? 0).toFixed(2)),
       status: (battery.current ?? 0) >= 0 ? "charging" as const : "discharging" as const,
     };
   }, [battery]);
@@ -628,35 +637,35 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
               <Zap className="w-3 h-3 text-battery" />
               <span className="text-xs text-muted-foreground">Voltage</span>
             </div>
-            <p className="text-lg font-mono font-bold text-foreground">{packSummary.totalVoltage}V</p>
+            <p className="text-lg font-mono font-bold text-foreground">{packSummary.totalVoltage.toFixed(3)}V</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">
               <Activity className="w-3 h-3 text-success" />
               <span className="text-xs text-muted-foreground">Current</span>
             </div>
-            <p className="text-lg font-mono font-bold text-success">+{packSummary.totalCurrent}A</p>
+            <p className="text-lg font-mono font-bold text-success">{packSummary.totalCurrent >= 0 ? '+' : ''}{packSummary.totalCurrent.toFixed(2)}A</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">
               <Zap className="w-3 h-3 text-solar" />
               <span className="text-xs text-muted-foreground">Power</span>
             </div>
-            <p className="text-lg font-mono font-bold text-solar">{packSummary.totalPower}kW</p>
+            <p className="text-lg font-mono font-bold text-solar">{packSummary.totalPower >= 0 ? '+' : ''}{packSummary.totalPower.toFixed(2)}kW</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">
               <Battery className="w-3 h-3 text-battery" />
               <span className="text-xs text-muted-foreground">SOC</span>
             </div>
-            <p className="text-lg font-mono font-bold text-battery">{packSummary.soc}%</p>
+            <p className="text-lg font-mono font-bold text-battery">{packSummary.soc.toFixed(2)}%</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">
               <Activity className="w-3 h-3 text-primary" />
               <span className="text-xs text-muted-foreground">Health</span>
             </div>
-            <p className="text-lg font-mono font-bold text-foreground">{packSummary.health}%</p>
+            <p className="text-lg font-mono font-bold text-foreground">{packSummary.health.toFixed(2)}%</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">
@@ -670,7 +679,7 @@ const BatteryCellGrid = ({ device }: BatteryCellGridProps) => {
               <Thermometer className="w-3 h-3 text-warning" />
               <span className="text-xs text-muted-foreground">Temp</span>
             </div>
-            <p className="text-lg font-mono font-bold text-foreground">{packSummary.temperature}°C</p>
+            <p className="text-lg font-mono font-bold text-foreground">{packSummary.temperature.toFixed(2)}°C</p>
           </div>
           <div className="bg-secondary/30 rounded-lg p-3">
             <div className="flex items-center gap-1 mb-1">

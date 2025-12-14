@@ -246,5 +246,72 @@ export const telemetryService = {
     
     return normalizedBatteries
   },
+
+  /**
+   * Get meter telemetry
+   */
+  async getMeterNow(meterId: string): Promise<any> {
+    const response = await api.get<{ status: string; meter: any; error?: string }>(
+      `/api/meter/now?meter_id=${meterId}`,
+      { ttl: CACHE_TTL.TELEMETRY, key: `telemetry:meter:${meterId}` }
+    ) as { status: string; meter: any; error?: string }
+    
+    if (response.status === 'error') {
+      throw new Error(response.error || `Error fetching meter telemetry for ${meterId}`)
+    }
+    
+    if (!response || !response.meter) {
+      // Return null instead of throwing - allows component to handle gracefully
+      return null
+    }
+    
+    // Update hierarchy object
+    const manager = HierarchyManager.getInstance()
+    const meterTelemetry = response.meter
+    
+    // Convert meter telemetry to TelemetryData format for hierarchy
+    const telemetryData = {
+      ts: meterTelemetry.ts || new Date().toISOString(),
+      pv_power_w: 0, // Meters don't have PV power
+      load_power_w: 0, // Meters don't have load power
+      grid_power_w: meterTelemetry.grid_power_w || 0,
+      batt_power_w: 0, // Meters don't have battery power
+      batt_soc_pct: null,
+      batt_voltage_v: null,
+      batt_current_a: null,
+      inverter_temp_c: null,
+      _metadata: {
+        import_kwh: meterTelemetry.grid_import_wh ? meterTelemetry.grid_import_wh / 1000 : 0,
+        export_kwh: meterTelemetry.grid_export_wh ? meterTelemetry.grid_export_wh / 1000 : 0,
+        voltage_v: meterTelemetry.grid_voltage_v || null,
+        current_a: meterTelemetry.grid_current_a || null,
+        frequency_hz: meterTelemetry.grid_frequency_hz || null,
+        power_factor: meterTelemetry.power_factor || null,
+        // Phase data
+        voltage_phase_a: meterTelemetry.voltage_phase_a || null,
+        voltage_phase_b: meterTelemetry.voltage_phase_b || null,
+        voltage_phase_c: meterTelemetry.voltage_phase_c || null,
+        current_phase_a: meterTelemetry.current_phase_a || null,
+        current_phase_b: meterTelemetry.current_phase_b || null,
+        current_phase_c: meterTelemetry.current_phase_c || null,
+        power_phase_a: meterTelemetry.power_phase_a || null,
+        power_phase_b: meterTelemetry.power_phase_b || null,
+        power_phase_c: meterTelemetry.power_phase_c || null,
+      },
+    }
+    
+    const normalizedTelemetry = normalizeTelemetry(telemetryData, 'meter', meterId)
+    
+    // Store meter-specific data in raw field
+    if (normalizedTelemetry.raw) {
+      const raw = normalizedTelemetry.raw as any
+      raw.import_kwh = meterTelemetry.grid_import_wh ? meterTelemetry.grid_import_wh / 1000 : 0
+      raw.export_kwh = meterTelemetry.grid_export_wh ? meterTelemetry.grid_export_wh / 1000 : 0
+    }
+    
+    manager.updateTelemetry(meterId, normalizedTelemetry)
+    
+    return response.meter
+  },
 }
 

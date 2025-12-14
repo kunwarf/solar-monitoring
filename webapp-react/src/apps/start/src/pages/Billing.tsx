@@ -122,7 +122,7 @@ const BillingPage = () => {
               <span className="text-sm text-muted-foreground">Energy Produced</span>
             </div>
             <p className="font-mono text-2xl font-bold text-solar">
-              {billingData.energyProduced.toFixed(1)}
+              {billingData.energyProduced.toFixed(2)}
               <span className="text-sm font-normal text-muted-foreground ml-1">kWh</span>
             </p>
           </motion.div>
@@ -140,7 +140,7 @@ const BillingPage = () => {
               <span className="text-sm text-muted-foreground">Energy Consumed</span>
             </div>
             <p className="font-mono text-2xl font-bold text-consumption">
-              {billingData.energyConsumed.toFixed(1)}
+              {billingData.energyConsumed.toFixed(2)}
               <span className="text-sm font-normal text-muted-foreground ml-1">kWh</span>
             </p>
           </motion.div>
@@ -161,7 +161,7 @@ const BillingPage = () => {
               {formatCurrency(billingData.earnings)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {billingData.energyExported.toFixed(1)} kWh @ {getCurrencySymbol()}{billingData.feedInRate}/kWh
+              {billingData.energyExported.toFixed(2)} kWh @ {getCurrencySymbol()}{billingData.feedInRate}/kWh
             </p>
           </motion.div>
 
@@ -181,7 +181,7 @@ const BillingPage = () => {
               {formatCurrency(billingData.costs)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {billingData.energyImported.toFixed(1)} kWh @ {getCurrencySymbol()}{billingData.importRate}/kWh
+              {billingData.energyImported.toFixed(2)} kWh @ {getCurrencySymbol()}{billingData.importRate}/kWh
             </p>
           </motion.div>
         </div>

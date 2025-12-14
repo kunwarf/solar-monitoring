@@ -95,7 +95,7 @@ const getMeterNetData = () => {
   const exportKwh = 8.2;
   const net = exportKwh - importKwh;
   return {
-    value: Math.abs(net).toFixed(1),
+    value: Math.abs(net).toFixed(2),
     isExport: net > 0,
   };
 };
@@ -114,8 +114,8 @@ const getDeviceMetrics = (device: Device): DeviceMetric[] => {
     const batteryStatus = getBatteryStatus();
     return [
       { label: "SOC", value: "78", unit: "%", icon: "battery-dynamic", color: "text-success" },
-      { label: batteryStatus.isCharging ? "Charging" : "Discharging", value: batteryStatus.power.toFixed(1), unit: "kW", icon: batteryStatus.isCharging ? ArrowDown : ArrowUp, color: batteryStatus.isCharging ? "text-success" : "text-warning" },
-      { label: "Voltage", value: "52.4", unit: "V", icon: Gauge, color: "text-muted-foreground" },
+      { label: batteryStatus.isCharging ? "Charging" : "Discharging", value: batteryStatus.power.toFixed(2), unit: "kW", icon: batteryStatus.isCharging ? ArrowDown : ArrowUp, color: batteryStatus.isCharging ? "text-success" : "text-warning" },
+      { label: "Voltage", value: "52.400", unit: "V", icon: Gauge, color: "text-muted-foreground" },
       { label: "Temp", value: "28", unit: "°C", icon: Gauge, color: "text-muted-foreground" },
     ];
   }
@@ -123,7 +123,7 @@ const getDeviceMetrics = (device: Device): DeviceMetric[] => {
     const netData = getMeterNetData();
     const currentPower = 0.3; // kW - positive = importing, negative = exporting
     return [
-      { label: "Power", value: Math.abs(currentPower).toFixed(1), unit: "kW", icon: currentPower >= 0 ? ArrowDown : ArrowUp, color: currentPower >= 0 ? "text-destructive" : "text-success" },
+      { label: "Power", value: Math.abs(currentPower).toFixed(2), unit: "kW", icon: currentPower >= 0 ? ArrowDown : ArrowUp, color: currentPower >= 0 ? "text-destructive" : "text-success" },
       { label: "Import", value: "2.5", unit: "kWh", icon: ArrowDown, color: "text-destructive" },
       { label: "Export", value: "8.2", unit: "kWh", icon: ArrowUp, color: "text-success" },
       { label: netData.isExport ? "Net Export" : "Net Import", value: netData.value, unit: "kWh", icon: netData.isExport ? ArrowUp : ArrowDown, color: netData.isExport ? "text-success" : "text-destructive" },

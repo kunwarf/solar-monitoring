@@ -1059,16 +1059,90 @@ def create_api(solar_app) -> FastAPI:
                         )
                         array_telemetry[array_cfg.id] = array_tel
             
-            # Get home-attached meters (attachment_target == "home" OR array_id == "home")
+            # Get home-attached meters from hierarchy (preferred) or config.yaml (fallback)
             # Support both field names for backward compatibility
             meter_telemetry = {}
             meter_configs = {}  # Store configs for meters even if telemetry is missing
-            if solar_app.cfg.meters:
+            
+            # First, try to get meters from hierarchy
+            hierarchy_meters = []
+            if hasattr(solar_app, 'hierarchy_systems') and solar_app.hierarchy_systems:
+                log.debug(f"API /api/system/now: Checking hierarchy for system '{target_system_id}'. Available systems: {list(solar_app.hierarchy_systems.keys())}")
+                
+                # Filter by target_system_id if specified
+                if target_system_id in solar_app.hierarchy_systems:
+                    systems_to_check = [target_system_id]
+                    log.debug(f"API /api/system/now: System '{target_system_id}' found in hierarchy")
+                else:
+                    systems_to_check = list(solar_app.hierarchy_systems.keys())
+                    log.warning(f"API /api/system/now: System '{target_system_id}' not found in hierarchy. Available: {systems_to_check}")
+                
+                for sys_id in systems_to_check:
+                    if sys_id not in solar_app.hierarchy_systems:
+                        continue
+                    system = solar_app.hierarchy_systems[sys_id]
+                    log.debug(f"API /api/system/now: Checking system '{sys_id}' for meters. Total meters in system: {len(system.meters)}")
+                    
+                    # Get system-level meters (array_id is None) for this specific system
+                    # Also check attachment_target to handle cases where system_id doesn't match attachment_target
+                    for meter in system.meters:
+                        meter_attachment_target = getattr(meter, 'attachment_target', None)
+                        log.debug(f"API /api/system/now: Meter {meter.meter_id}: array_id={meter.array_id}, system_id={meter.system_id}, attachment_target={meter_attachment_target}")
+                        
+                        if meter.array_id is None:  # System-level meter
+                            # Include meter if:
+                            # 1. It belongs to the target system (system_id matches), OR
+                            # 2. Its attachment_target matches the target system (handles migration inconsistencies)
+                            if meter.system_id == target_system_id or meter_attachment_target == target_system_id:
+                                hierarchy_meters.append(meter)
+                                log.debug(f"Found hierarchy meter: {meter.meter_id} (system: {sys_id}, attachment_target: {meter_attachment_target})")
+                            else:
+                                log.debug(f"Skipping meter {meter.meter_id} - system_id={meter.system_id} and attachment_target={meter_attachment_target} don't match target '{target_system_id}'")
+                        else:
+                            log.debug(f"Skipping meter {meter.meter_id} - not system-level (array_id={meter.array_id})")
+            else:
+                log.warning(f"API /api/system/now: No hierarchy_systems available")
+            
+            log.info(f"API /api/system/now: Found {len(hierarchy_meters)} meter(s) from hierarchy for system '{target_system_id}'")
+            
+            # Process hierarchy meters
+            for meter in hierarchy_meters:
+                meter_id = meter.meter_id
+                attachment_target = getattr(meter, 'attachment_target', None)
+                array_id = getattr(meter, 'array_id', None)
+                
+                # Check if this is a system-level meter (attachment_target == "system" or None, array_id == None)
+                is_system_meter = (attachment_target == "system" or attachment_target is None) and (array_id is None)
+                
+                if is_system_meter:
+                    # Store meter info (we'll create a config-like dict for compatibility)
+                    meter_configs[meter_id] = {
+                        'id': meter_id,
+                        'name': meter.name,
+                        'model': meter.model,
+                        'attachment_target': attachment_target or "system",
+                        'array_id': None,
+                    }
+                    
+                    # Get telemetry if available
+                    if hasattr(solar_app, 'meter_last') and solar_app.meter_last:
+                        meter_tel = solar_app.meter_last.get(meter_id)
+                        if meter_tel:
+                            meter_telemetry[meter_id] = meter_tel
+                            log.debug(f"Found telemetry for hierarchy meter {meter_id}: power={meter_tel.grid_power_w}W")
+                        else:
+                            log.debug(f"No telemetry found for hierarchy meter {meter_id} in meter_last")
+                    else:
+                        log.debug(f"meter_last not available or empty for hierarchy meter {meter_id}")
+            
+            # Fallback to config.yaml meters if no hierarchy meters found
+            if not hierarchy_meters and solar_app.cfg.meters:
+                log.info(f"API /api/system/now: No hierarchy meters found, falling back to config.yaml meters for system '{target_system_id}'")
                 for meter_cfg in solar_app.cfg.meters:
                     attachment_target = getattr(meter_cfg, 'attachment_target', None)
                     array_id = getattr(meter_cfg, 'array_id', None)
-                    # Check both attachment_target and array_id for "home"
-                    is_home_meter = (attachment_target == "home") or (array_id == "home")
+                    # Check both attachment_target and array_id for target_system_id, "home", or "system"
+                    is_home_meter = (attachment_target in (target_system_id, "home", "system")) or (array_id in (target_system_id, "home", "system", None))
                     
                     if is_home_meter:
                         meter_id = meter_cfg.id
@@ -1079,6 +1153,11 @@ def create_api(solar_app) -> FastAPI:
                             meter_tel = solar_app.meter_last.get(meter_id)
                             if meter_tel:
                                 meter_telemetry[meter_id] = meter_tel
+                                log.debug(f"Found telemetry for config meter {meter_id}: power={meter_tel.grid_power_w}W")
+                            else:
+                                log.debug(f"No telemetry found for config meter {meter_id} in meter_last")
+            
+            log.info(f"API /api/system/now: Total meters found - configs: {len(meter_configs)}, telemetry: {len(meter_telemetry)}")
             
             # Get all battery bank telemetry for aggregation
             battery_bank_telemetry = {}
@@ -1375,7 +1454,7 @@ def create_api(solar_app) -> FastAPI:
                 else:
                     log.debug("API /api/home/now: Skipping monthly energy calculation - missing arrays, logger, or logger.path")
             except Exception as e:
-                log.error(f"API /api/system/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
+                log.error(f"API /api/home/now: Error calculating monthly energy and financial metrics: {e}", exc_info=True)
             
             # Convert home_tel to dict, ensuring no circular references
             # Manually extract only primitive fields to avoid any nested object issues
@@ -1660,7 +1739,7 @@ def create_api(solar_app) -> FastAPI:
                 "system": home_dict  # Frontend expects "system" key
             }
         except Exception as e:
-            log.error(f"Error in /api/system/now: {e}", exc_info=True)
+            log.error(f"Error in /api/home/now: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
     
     @app.get("/api/now")

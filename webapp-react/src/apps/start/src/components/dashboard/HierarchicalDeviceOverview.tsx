@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { motion } from "framer-motion";
 import { Cpu, Gauge, ChevronRight, ChevronDown, Sun, Zap, Home, ArrowDown, ArrowUp, Layers, Battery } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -128,7 +129,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
             <div className="min-w-0 text-left">
               <p className="text-[10px] text-muted-foreground">Solar</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {systemAgg.solarPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+                {systemAgg.solarPower.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
               </p>
             </div>
           </div>
@@ -137,7 +138,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
             <div className="min-w-0 text-left">
               <p className="text-[10px] text-muted-foreground">Load</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {systemAgg.loadPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+                {systemAgg.loadPower.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
               </p>
             </div>
           </div>
@@ -146,7 +147,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
             <div className="min-w-0 text-left">
               <p className="text-[10px] text-muted-foreground">Grid</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {systemAgg.gridPower.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+                {systemAgg.gridPower.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
               </p>
             </div>
           </div>
@@ -155,7 +156,7 @@ function SystemCard({ system, index }: { system: System; index: number }) {
             <div className="min-w-0 text-left">
               <p className="text-[10px] text-muted-foreground">Avg SOC</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {avgBatterySoc.toFixed(0)}<span className="text-xs text-muted-foreground ml-0.5">%</span>
+                {avgBatterySoc.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">%</span>
               </p>
             </div>
           </div>
@@ -168,23 +169,51 @@ function SystemCard({ system, index }: { system: System; index: number }) {
             <div className="min-w-0 text-left">
               <p className="text-[10px] text-muted-foreground">{isCharging ? "Charging" : "Discharging"}</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {Math.abs(totalBatteryPower).toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+                {Math.abs(totalBatteryPower).toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
               </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Inverter Arrays - Each as separate expandable card */}
+      {/* Inverter Arrays and their attached Battery Arrays */}
       <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-4">
-        {system.inverterArrays.map((array, arrIndex) => (
-          <InverterArrayCard key={array.id} array={array} index={arrIndex} />
-        ))}
-
-        {/* Battery Arrays - Each as separate expandable card */}
-        {system.batteryArrays.map((batteryArray, batIndex) => (
-          <BatteryArrayCard key={batteryArray.id} batteryArray={batteryArray} index={batIndex} />
-        ))}
+        {system.inverterArrays.map((array, arrIndex) => {
+          // Find the battery array attached to this inverter array
+          const attachedBatteryArray = array.batteryArrayId 
+            ? system.batteryArrays.find(ba => ba.id === array.batteryArrayId)
+            : null;
+          
+          // Find all unattached battery arrays (for display at the end)
+          const unattachedBatteryArrays = system.batteryArrays.filter(
+            ba => !system.inverterArrays.some(ia => ia.batteryArrayId === ba.id)
+          );
+          
+          return (
+            <Fragment key={array.id}>
+              <InverterArrayCard key={array.id} array={array} index={arrIndex} />
+              {/* Show attached battery array right after the inverter array */}
+              {attachedBatteryArray && (
+                <BatteryArrayCard 
+                  key={attachedBatteryArray.id} 
+                  batteryArray={attachedBatteryArray} 
+                  index={arrIndex} 
+                />
+              )}
+            </Fragment>
+          );
+        })}
+        
+        {/* Show unattached battery arrays at the end */}
+        {system.batteryArrays
+          .filter(ba => !system.inverterArrays.some(ia => ia.batteryArrayId === ba.id))
+          .map((batteryArray, batIndex) => (
+            <BatteryArrayCard 
+              key={batteryArray.id} 
+              batteryArray={batteryArray} 
+              index={system.inverterArrays.length + batIndex} 
+            />
+          ))}
       </div>
     </motion.div>
   );
@@ -214,7 +243,7 @@ function InverterArrayCard({ array, index }: { array: InverterArray; index: numb
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold text-foreground truncate">{array.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {agg.inverterCount} Inverter{agg.inverterCount > 1 ? "s" : ""} • {agg.solarPower.toFixed(1)} kW
+                  {agg.inverterCount} Inverter{agg.inverterCount > 1 ? "s" : ""} • {agg.solarPower.toFixed(2)} kW
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -271,7 +300,7 @@ function BatteryArrayCard({ batteryArray, index }: { batteryArray: BatteryArray;
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold text-foreground truncate">{batteryArray.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {agg.batteryCount} Bank{agg.batteryCount > 1 ? "s" : ""} • {agg.avgSoc.toFixed(0)}% SOC
+                  {agg.batteryCount} Bank{agg.batteryCount > 1 ? "s" : ""} • {agg.avgSoc.toFixed(2)}% SOC
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -325,10 +354,10 @@ function InverterCard({ inverter }: { inverter: Inverter }) {
           </div>
         </div>
         <div className="grid grid-cols-4 gap-2">
-          <MetricPill icon={Sun} label="Solar" value={inverter.metrics.solarPower.toFixed(1)} unit="kW" color="text-warning" />
-          <MetricPill icon={Zap} label="Grid" value={inverter.metrics.gridPower.toFixed(1)} unit="kW" color="text-primary" />
-          <MetricPill icon={Home} label="Load" value={inverter.metrics.loadPower.toFixed(1)} unit="kW" color="text-success" />
-          <MetricPill icon={Battery} label="Bat" value={inverter.metrics.batteryPower.toFixed(1)} unit="kW" color="text-cyan-400" />
+          <MetricPill icon={Sun} label="Solar" value={inverter.metrics.solarPower.toFixed(2)} unit="kW" color="text-warning" />
+          <MetricPill icon={Zap} label="Grid" value={inverter.metrics.gridPower.toFixed(2)} unit="kW" color="text-primary" />
+          <MetricPill icon={Home} label="Load" value={inverter.metrics.loadPower.toFixed(2)} unit="kW" color="text-success" />
+          <MetricPill icon={Battery} label="Bat" value={inverter.metrics.batteryPower.toFixed(2)} unit="kW" color="text-cyan-400" />
         </div>
       </div>
     </Link>
@@ -365,12 +394,12 @@ function BatteryCard({ battery }: { battery: BatteryBank }) {
           <MetricPill 
             icon={isCharging ? ArrowDown : ArrowUp} 
             label={isCharging ? "Chrg" : "Disch"} 
-            value={Math.abs(battery.metrics.power).toFixed(1)} 
+            value={Math.abs(battery.metrics.power).toFixed(2)} 
             unit="kW" 
             color={isCharging ? "text-success" : "text-warning"} 
           />
-          <MetricPill icon={Gauge} label="Volt" value={battery.metrics.voltage > 0 ? battery.metrics.voltage.toFixed(1) : "N/A"} unit="V" color="text-muted-foreground" />
-          <MetricPill icon={Gauge} label="Temp" value={battery.metrics.temperature > 0 ? battery.metrics.temperature.toString() : "N/A"} unit="°C" color="text-muted-foreground" />
+          <MetricPill icon={Gauge} label="Volt" value={battery.metrics.voltage > 0 ? battery.metrics.voltage.toFixed(3) : "N/A"} unit="V" color="text-muted-foreground" />
+          <MetricPill icon={Gauge} label="Temp" value={battery.metrics.temperature > 0 ? battery.metrics.temperature.toFixed(2) : "N/A"} unit="°C" color="text-muted-foreground" />
         </div>
       </div>
     </Link>
@@ -409,7 +438,7 @@ function MeterCard({ meter }: { meter: Meter }) {
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground">{isExporting ? "Exporting" : "Importing"}</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {Math.abs(meter.metrics.power / 1000).toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
+                {Math.abs(meter.metrics.power / 1000).toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kW</span>
               </p>
             </div>
           </div>
@@ -418,7 +447,7 @@ function MeterCard({ meter }: { meter: Meter }) {
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground">Import</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {meter.metrics.importKwh.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
+                {meter.metrics.importKwh.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
               </p>
             </div>
           </div>
@@ -427,7 +456,7 @@ function MeterCard({ meter }: { meter: Meter }) {
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground">Export</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {meter.metrics.exportKwh.toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
+                {meter.metrics.exportKwh.toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
               </p>
             </div>
           </div>
@@ -436,7 +465,7 @@ function MeterCard({ meter }: { meter: Meter }) {
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground">{netExport >= 0 ? "Net Export" : "Net Import"}</p>
               <p className="font-mono text-sm font-medium text-foreground">
-                {Math.abs(netExport).toFixed(1)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
+                {Math.abs(netExport).toFixed(2)}<span className="text-xs text-muted-foreground ml-0.5">kWh</span>
               </p>
             </div>
           </div>
