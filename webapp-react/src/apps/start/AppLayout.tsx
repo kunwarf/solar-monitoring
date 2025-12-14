@@ -12,10 +12,18 @@ import { Toaster as Sonner } from './src/components/ui/sonner'
 import { DataProvider } from './src/data/DataProvider'
 import './styles/globals.css'
 
-// Create a QueryClient instance
-const queryClient = new QueryClient()
-
 export const StartAppLayout: React.FC = () => {
+  // Create QueryClient instance inside component to ensure proper initialization
+  // Using useState to create it once and keep it stable across re-renders
+  const [queryClient] = React.useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 1,
+        refetchOnWindowFocus: false,
+        staleTime: 3000,
+      },
+    },
+  }))
   // Initialize mobile state safely to prevent hydration mismatches
   // CRITICAL: Always start with false to ensure server and client render the same initial state
   // This prevents React error #310 (hydration mismatch) on mobile devices

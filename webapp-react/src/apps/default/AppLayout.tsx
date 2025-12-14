@@ -6,13 +6,16 @@
 
 import React, { useState, useMemo } from 'react'
 import { Outlet } from 'react-router-dom'
-import { useMobile } from '../../hooks/useMobile'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAllSystems } from '../../api/hooks/useHierarchyObjects'
 import { SharedSidebar } from '../../components/SharedSidebar'
 import { MobileBottomNav } from '../../components/MobileBottomNav'
 import { ArrayInfo } from '../../types/telemetry'
 // Import main styles to get CSS variables for consistent theming
 import '../../styles.css'
+
+// Create a QueryClient instance for React Query hooks
+const queryClient = new QueryClient()
 
 // Create a context for array selection
 export const ArrayContext = React.createContext<{
@@ -25,8 +28,28 @@ export const ArrayContext = React.createContext<{
   setSelectedArray: () => {},
 })
 
-export const DefaultAppLayout: React.FC = () => {
-  const { isMobile } = useMobile()
+// Inner component that uses React Query hooks (must be inside QueryClientProvider)
+const DefaultAppLayoutInner: React.FC = () => {
+  // Initialize mobile state safely to prevent hydration mismatches
+  // CRITICAL: Always start with false to ensure server and client render the same initial state
+  // This prevents React error #310 (hydration mismatch) on mobile devices
+  const [isMobile, setIsMobile] = React.useState(false)
+  
+  React.useEffect(() => {
+    // Set the actual mobile value after React has hydrated
+    // This ensures server and client render the same initial state, preventing hydration errors
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    // Set immediately after mount (hydration is complete at this point)
+    checkMobile()
+    
+    // Listen for resize events
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+  
   const systems = useAllSystems()
   const [selectedArray, setSelectedArray] = useState<string | null>(null)
 
@@ -68,6 +91,15 @@ export const DefaultAppLayout: React.FC = () => {
         </div>
       </div>
     </ArrayContext.Provider>
+  )
+}
+
+// Outer component that provides QueryClient context
+export const DefaultAppLayout: React.FC = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DefaultAppLayoutInner />
+    </QueryClientProvider>
   )
 }
 

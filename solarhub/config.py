@@ -147,6 +147,7 @@ class MeterConfig(BaseModel):
     array_id: Optional[str] = None  # Array this meter is associated with (or "home" for home-level meter) - DEPRECATED, use attachment_target
     attachment_target: Optional[str] = None  # "home" or array_id - where this meter is attached
     adapter: MeterAdapterConfig
+    system_id: Optional[str] = None  # System this meter belongs to (for HA discovery via_device relationships)
     
     @model_validator(mode='after')
     def set_attachment_target(self):

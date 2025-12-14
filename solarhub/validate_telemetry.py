@@ -409,8 +409,41 @@ class TelemetryValidator:
             
             try:
                 # Try to get distinct bank_ids, handling encoding errors
-                self.cur.execute("SELECT DISTINCT bank_id FROM battery_cell_samples")
-                for row in self.cur.fetchall():
+                # Use rowid-based approach to handle encoding errors gracefully
+                try:
+                    self.cur.execute("SELECT DISTINCT bank_id FROM battery_cell_samples")
+                    rows = self.cur.fetchall()
+                except sqlite3.OperationalError as e:
+                    if "Could not decode to UTF-8" in str(e):
+                        # If DISTINCT query fails due to encoding, use rowid-based approach
+                        log.debug("DISTINCT query failed due to encoding, using rowid-based approach")
+                        # Get max rowid to know how many rows to check
+                        self.cur.execute("SELECT MAX(rowid) FROM battery_cell_samples")
+                        max_rowid_result = self.cur.fetchone()
+                        max_rowid = max_rowid_result[0] if max_rowid_result and max_rowid_result[0] else 0
+                        
+                        # Collect unique bank_ids by iterating through rowids
+                        seen_bank_ids = set()
+                        rows = []
+                        for rowid in range(1, min(max_rowid + 1, 100000)):  # Limit to prevent infinite loops
+                            try:
+                                self.cur.execute("SELECT bank_id FROM battery_cell_samples WHERE rowid = ?", (rowid,))
+                                row = self.cur.fetchone()
+                                if row:
+                                    bank_id = row[0]
+                                    if bank_id and bank_id not in seen_bank_ids:
+                                        seen_bank_ids.add(bank_id)
+                                        rows.append((bank_id,))
+                            except (sqlite3.OperationalError, UnicodeDecodeError):
+                                corrupted_count += 1
+                                continue
+                            except Exception:
+                                break  # Stop if we hit other errors
+                    else:
+                        raise
+                
+                # Process rows
+                for row in rows:
                     bank_id = row[0]
                     # Check if bank_id is valid (not binary/corrupted)
                     if isinstance(bank_id, bytes):
@@ -420,10 +453,11 @@ class TelemetryValidator:
                         # Try to decode as UTF-8 string
                         if isinstance(bank_id, str):
                             bank_id.encode('utf-8')  # Validate it's valid UTF-8
-                            packs_with_cell_data.append(bank_id)
+                            if bank_id not in packs_with_cell_data:
+                                packs_with_cell_data.append(bank_id)
                         else:
                             corrupted_count += 1
-                    except (UnicodeEncodeError, AttributeError):
+                    except (UnicodeEncodeError, AttributeError, UnicodeDecodeError):
                         corrupted_count += 1
             except Exception as e:
                 # If query fails due to encoding, try alternative approach
