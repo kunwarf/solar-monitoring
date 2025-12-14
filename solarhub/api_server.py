@@ -1092,10 +1092,18 @@ def create_api(solar_app) -> FastAPI:
                         if meter.array_id is None:  # System-level meter
                             # Include meter if:
                             # 1. It belongs to the target system (system_id matches), OR
-                            # 2. Its attachment_target matches the target system (handles migration inconsistencies)
-                            if meter.system_id == target_system_id or meter_attachment_target == target_system_id:
+                            # 2. Its attachment_target matches the target system (handles migration inconsistencies), OR
+                            # 3. attachment_target is "home" and target_system_id is "system" (common migration case), OR
+                            # 4. system_id is "home" and target_system_id is "system" (common migration case)
+                            should_include = (
+                                meter.system_id == target_system_id or 
+                                meter_attachment_target == target_system_id or
+                                (meter_attachment_target == "home" and target_system_id == "system") or
+                                (meter.system_id == "home" and target_system_id == "system")
+                            )
+                            if should_include:
                                 hierarchy_meters.append(meter)
-                                log.debug(f"Found hierarchy meter: {meter.meter_id} (system: {sys_id}, attachment_target: {meter_attachment_target})")
+                                log.debug(f"Found hierarchy meter: {meter.meter_id} (system: {sys_id}, system_id: {meter.system_id}, attachment_target: {meter_attachment_target})")
                             else:
                                 log.debug(f"Skipping meter {meter.meter_id} - system_id={meter.system_id} and attachment_target={meter_attachment_target} don't match target '{target_system_id}'")
                         else:
@@ -1111,10 +1119,9 @@ def create_api(solar_app) -> FastAPI:
                 attachment_target = getattr(meter, 'attachment_target', None)
                 array_id = getattr(meter, 'array_id', None)
                 
-                # Check if this is a system-level meter (attachment_target == "system" or None, array_id == None)
-                is_system_meter = (attachment_target == "system" or attachment_target is None) and (array_id is None)
-                
-                if is_system_meter:
+                # Include all system-level meters (array_id == None) regardless of attachment_target
+                # This handles cases where attachment_target might be "home", "system", or None
+                if array_id is None:
                     # Store meter info (we'll create a config-like dict for compatibility)
                     meter_configs[meter_id] = {
                         'id': meter_id,
@@ -1132,22 +1139,36 @@ def create_api(solar_app) -> FastAPI:
                             log.debug(f"Found telemetry for hierarchy meter {meter_id}: power={meter_tel.grid_power_w}W")
                         else:
                             log.debug(f"No telemetry found for hierarchy meter {meter_id} in meter_last")
+                            # Still add to meter_configs even without telemetry (for UI display)
                     else:
                         log.debug(f"meter_last not available or empty for hierarchy meter {meter_id}")
+                        # Still add to meter_configs even without telemetry (for UI display)
+                else:
+                    log.debug(f"Skipping meter {meter_id} - has array_id={array_id}, not system-level")
             
-            # Fallback to config.yaml meters if no hierarchy meters found
-            if not hierarchy_meters and solar_app.cfg.meters:
-                log.info(f"API /api/system/now: No hierarchy meters found, falling back to config.yaml meters for system '{target_system_id}'")
+            # Fallback to config.yaml meters if no hierarchy meters found OR if we need to add config meters that weren't in hierarchy
+            if solar_app.cfg.meters:
                 for meter_cfg in solar_app.cfg.meters:
+                    meter_id = meter_cfg.id
+                    # Skip if already processed from hierarchy
+                    if meter_id in meter_configs:
+                        continue
+                    
                     attachment_target = getattr(meter_cfg, 'attachment_target', None)
                     array_id = getattr(meter_cfg, 'array_id', None)
                     # Check both attachment_target and array_id for target_system_id, "home", or "system"
-                    is_home_meter = (attachment_target in (target_system_id, "home", "system")) or (array_id in (target_system_id, "home", "system", None))
+                    # Also include if array_id is None (system-level meter)
+                    is_system_meter = (
+                        array_id is None and (
+                            attachment_target in (target_system_id, "home", "system", None) or
+                            target_system_id in ("system", "home")
+                        )
+                    )
                     
-                    if is_home_meter:
-                        meter_id = meter_cfg.id
+                    if is_system_meter:
                         # Store config even if telemetry is missing (for fallback display)
                         meter_configs[meter_id] = meter_cfg
+                        log.debug(f"Added config meter {meter_id} to meter_configs (attachment_target: {attachment_target}, array_id: {array_id})")
                         
                         if hasattr(solar_app, 'meter_last') and solar_app.meter_last:
                             meter_tel = solar_app.meter_last.get(meter_id)

@@ -4,6 +4,7 @@ import { Zap, ArrowUpRight, ArrowDownLeft, Activity, Gauge, TrendingUp, Trending
 import { cn } from "@/lib/utils";
 import { useHomeTelemetry, useHourlyEnergy, useMeterTelemetry } from "@root/api/hooks";
 import { useDevicesData } from "@/data/mockDataHooks";
+import { api } from "@root/api";
 import {
   BarChart,
   Bar,
@@ -139,8 +140,56 @@ const PhaseCard = ({ data, index }: { data: PhaseData; index: number }) => (
 );
 
 const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
-  // Fetch dedicated meter telemetry from /api/meter/now
-  const { data: meterTelemetry, isLoading: meterLoading, error: meterError } = useMeterTelemetry(device.id, { refetchInterval: 5000 });
+  console.log(`[MeterTelemetry] Rendering for device:`, {
+    id: device.id,
+    name: device.name,
+  });
+  
+  // Fetch list of available meters from backend to get the correct meter ID
+  // The backend /api/meters returns IDs from config, which may differ from hierarchy IDs
+  const [actualMeterId, setActualMeterId] = React.useState<string>(device.id);
+  
+  React.useEffect(() => {
+    const fetchMeterIds = async () => {
+      try {
+        const response = await api.get('/api/meters') as { status: string; meters?: string[]; error?: string };
+        if (response && response.meters && Array.isArray(response.meters)) {
+          // Try to find a matching meter ID
+          // First try exact match
+          if (response.meters.includes(device.id)) {
+            setActualMeterId(device.id);
+            console.log(`[MeterTelemetry] Using device ID: ${device.id}`);
+          } else if (response.meters.length > 0) {
+            // Fallback to first available meter
+            console.warn(`[MeterTelemetry] Device ID ${device.id} not found in available meters (${response.meters.join(', ')}), using first available: ${response.meters[0]}`);
+            setActualMeterId(response.meters[0]);
+          } else {
+            console.warn(`[MeterTelemetry] No meters available from backend, using device ID: ${device.id}`);
+          }
+        } else {
+          console.warn(`[MeterTelemetry] Invalid response from /api/meters, using device ID: ${device.id}`);
+        }
+      } catch (error) {
+        console.error('[MeterTelemetry] Error fetching meter list:', error);
+        // Fallback to device.id if API fails
+        setActualMeterId(device.id);
+      }
+    };
+    fetchMeterIds();
+  }, [device.id]);
+  
+  // Fetch dedicated meter telemetry from /api/meter/now using the actual meter ID from backend
+  const { data: meterTelemetry, isLoading: meterLoading, error: meterError } = useMeterTelemetry(actualMeterId, { 
+    refetchInterval: 5000,
+    enabled: !!actualMeterId,
+  });
+  
+  console.log(`[MeterTelemetry] Hook state:`, {
+    isLoading: meterLoading,
+    hasData: !!meterTelemetry,
+    error: meterError,
+    meterId: meterTelemetry?.id,
+  });
   
   // Fetch hourly energy for charts
   const { data: hourlyData } = useHourlyEnergy({ inverterId: undefined });
@@ -155,11 +204,25 @@ const MeterTelemetry = ({ device }: MeterTelemetryProps) => {
   }
   
   if (meterError) {
-    return <div className="text-center py-8 text-destructive">Error loading meter telemetry: {String(meterError)}</div>;
+    console.error(`[MeterTelemetry] Error:`, meterError);
+    return (
+      <div className="text-center py-8 text-destructive">
+        Error loading meter telemetry: {String(meterError)}
+        <br />
+        <span className="text-sm text-muted-foreground">Meter ID: {device.id}</span>
+      </div>
+    );
   }
   
   if (!meterTelemetry) {
-    return <div className="text-center py-8 text-muted-foreground">No meter telemetry data available. Meter may not be connected or polling.</div>;
+    console.warn(`[MeterTelemetry] No telemetry data for device:`, device.id);
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        No meter telemetry data available. Meter may not be connected or polling.
+        <br />
+        <span className="text-sm">Meter ID: {device.id}</span>
+      </div>
+    );
   }
   
   // Calculate today's stats from hourly data

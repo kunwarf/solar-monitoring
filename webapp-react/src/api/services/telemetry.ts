@@ -129,15 +129,19 @@ export const telemetryService = {
     
     // Update meter telemetry from system response
     if (systemData.meters && Array.isArray(systemData.meters)) {
+      console.log(`[getSystemNow] Found ${systemData.meters.length} meter(s) in system response:`, systemData.meters.map(m => ({ id: m.meter_id || m.id, power_w: m.power_w, import_kwh: m.import_kwh, export_kwh: m.export_kwh })))
       for (const meter of systemData.meters) {
-        if (meter.meter_id) {
+        // Backend returns meter_id, but also check for id as fallback
+        const meterId = meter.meter_id || meter.id
+        if (meterId) {
           try {
             // Convert meter data to TelemetryData format
+            // Backend returns: power_w (in watts), import_kwh, export_kwh (already in kWh)
             const meterTelemetryData: any = {
-              ts: new Date().toISOString(),
+              ts: meter.ts || new Date().toISOString(),
               pv_power_w: 0, // Meters don't have PV power
               load_power_w: 0, // Meters don't have load power
-              grid_power_w: (meter.power_w || 0), // Meter power (positive = import, negative = export)
+              grid_power_w: (meter.power_w || 0), // Meter power in watts (positive = import, negative = export)
               batt_power_w: 0, // Meters don't have battery power
               batt_soc_pct: null,
               batt_voltage_v: null,
@@ -151,8 +155,13 @@ export const telemetryService = {
                 frequency_hz: meter.frequency_hz || null,
               },
             }
+            console.log(`[getSystemNow] Updating meter ${meterId} telemetry:`, {
+              power_w: meterTelemetryData.grid_power_w,
+              import_kwh: meterTelemetryData._metadata.import_kwh,
+              export_kwh: meterTelemetryData._metadata.export_kwh,
+            })
             // Normalize the telemetry data
-            const normalizedTelemetry = normalizeTelemetry(meterTelemetryData, 'meter', meter.meter_id)
+            const normalizedTelemetry = normalizeTelemetry(meterTelemetryData, 'meter', meterId)
             // Store meter-specific data in the raw field for access by Meter.getImportEnergy() and getExportEnergy()
             if (normalizedTelemetry.raw) {
               const raw = normalizedTelemetry.raw as any
@@ -160,12 +169,17 @@ export const telemetryService = {
               raw.export_kwh = meter.export_kwh || 0
             }
             // Update the hierarchy object
-            manager.updateTelemetry(meter.meter_id, normalizedTelemetry)
+            manager.updateTelemetry(meterId, normalizedTelemetry)
+            console.log(`[getSystemNow] Successfully updated meter ${meterId} telemetry in hierarchy`)
           } catch (err) {
-            console.warn(`[telemetryService] Failed to update meter ${meter.meter_id} telemetry:`, err)
+            console.error(`[getSystemNow] Failed to update meter ${meterId} telemetry:`, err, meter)
           }
+        } else {
+          console.warn(`[getSystemNow] Meter object missing meter_id or id:`, meter)
         }
       }
+    } else {
+      console.warn(`[getSystemNow] No meters array in system response or not an array:`, systemData.meters)
     }
     
     return telemetry
@@ -251,16 +265,26 @@ export const telemetryService = {
    * Get meter telemetry
    */
   async getMeterNow(meterId: string): Promise<any> {
+    console.log(`[getMeterNow] Fetching meter telemetry for meterId: ${meterId}`)
     const response = await api.get<{ status: string; meter: any; error?: string }>(
       `/api/meter/now?meter_id=${meterId}`,
       { ttl: CACHE_TTL.TELEMETRY, key: `telemetry:meter:${meterId}` }
     ) as { status: string; meter: any; error?: string }
     
+    console.log(`[getMeterNow] Response for ${meterId}:`, {
+      status: response.status,
+      hasMeter: !!response.meter,
+      error: response.error,
+      meterId: response.meter?.id,
+    })
+    
     if (response.status === 'error') {
+      console.error(`[getMeterNow] Error response for ${meterId}:`, response.error)
       throw new Error(response.error || `Error fetching meter telemetry for ${meterId}`)
     }
     
     if (!response || !response.meter) {
+      console.warn(`[getMeterNow] No meter data in response for ${meterId}. Response:`, response)
       // Return null instead of throwing - allows component to handle gracefully
       return null
     }

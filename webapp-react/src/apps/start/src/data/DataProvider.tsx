@@ -175,9 +175,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       };
     });
 
-    // Transform meters
+    // Transform meters - read telemetry directly to ensure we get latest values
     const meters: Meter[] = primarySystem.meters.map(meter => {
       const telemetry = meter.getTelemetry();
+      // Get latest telemetry values - these are updated by getSystemNow()
+      const power = meter.getPower(); // Returns kW (from gridPower)
+      const importKwh = meter.getImportEnergy(); // Returns kWh
+      const exportKwh = meter.getExportEnergy(); // Returns kWh
+      
+      console.log(`[DataProvider] Meter ${meter.id} metrics:`, {
+        power,
+        importKwh,
+        exportKwh,
+        hasTelemetry: !!telemetry,
+      });
+      
       return {
         id: meter.id,
         name: meter.name,
@@ -185,9 +197,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         serialNumber: meter.serialNumber || meter.id,
         status: meter.getStatus(),
         metrics: {
-          power: meter.getPower(),
-          importKwh: meter.getImportEnergy(),
-          exportKwh: meter.getExportEnergy(),
+          power: power * 1000, // Convert kW to W for display (MeterCard expects W)
+          importKwh: importKwh,
+          exportKwh: exportKwh,
           frequency: 50.0, // Default
           powerFactor: 0.98, // Default
         },
