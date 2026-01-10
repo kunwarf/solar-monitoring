@@ -1,131 +1,151 @@
+import { useState } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { EnergyFlowDiagram } from "@/components/dashboard/EnergyFlowDiagram";
 import { EnergyChart } from "@/components/dashboard/EnergyChart";
-import { DeviceOverview } from "@/components/dashboard/DeviceOverview";
-import { HierarchicalDeviceOverview } from "@/components/dashboard/HierarchicalDeviceOverview";
-import { Sun, Battery, Home, Zap, TrendingUp, ArrowDownUp, Leaf, DollarSign, Receipt, Target, Gauge, ArrowDown, ArrowUp } from "lucide-react";
+import { BillingSummary } from "@/components/dashboard/BillingSummary";
+import { VisualSystemDiagram } from "@/components/dashboard/VisualSystemDiagram";
+import { Sun, Home, TrendingUp, Leaf, DollarSign, Receipt, Target, Gauge, ChevronDown, ChevronUp } from "lucide-react";
 import { useEnergyStatsData, useChartData } from "@/data/mockDataHooks";
+import { useBillingConfig } from "@/hooks/use-billing-config";
+import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
 
 const Index = () => {
   // Get data from API (same structure as mockData)
   const energyStats = useEnergyStatsData();
   const chartData = useChartData();
+  const { getCurrencySymbol } = useBillingConfig();
+  const [showAllStats, setShowAllStats] = useState(false);
+
+  const priorityStats = [
+    {
+      title: "Monthly Bill Estimate",
+      value: Math.round(energyStats.monthlyBillAmount).toString(),
+      unit: getCurrencySymbol(),
+      icon: Receipt,
+      variant: "financial" as const,
+      delay: 0,
+    },
+    {
+      title: "Today's Savings",
+      value: Math.round(energyStats.moneySaved).toString(),
+      unit: getCurrencySymbol(),
+      icon: DollarSign,
+      variant: "financial" as const,
+      trend: { value: 8, isPositive: true },
+      delay: 0.1,
+    },
+    {
+      title: "CO₂ Saved Today",
+      value: Math.round(energyStats.co2Saved).toString(),
+      unit: "kg",
+      icon: Leaf,
+      variant: "environment" as const,
+      trend: { value: 15, isPositive: true },
+      delay: 0.2,
+    },
+    {
+      title: "Today's Production",
+      value: Math.round(energyStats.dailyProduction).toString(),
+      unit: "kWh",
+      icon: TrendingUp,
+      variant: "solar" as const,
+      delay: 0.3,
+    },
+  ];
+
+  const additionalStats = [
+    {
+      title: "Self-Consumption",
+      value: Math.round(energyStats.selfConsumption).toString(),
+      unit: "%",
+      icon: Home,
+      variant: "consumption" as const,
+      delay: 0.4,
+    },
+    {
+      title: "Predicted vs Actual",
+      value: `${Math.round(energyStats.dailyProduction)}/${Math.round(energyStats.dailyPrediction)}`,
+      unit: "kWh",
+      icon: Target,
+      variant: "prediction" as const,
+      trend: { value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction },
+      delay: 0.5,
+    },
+    {
+      title: "Avg kWh/kWp",
+      value: Math.round(energyStats.avgKwPerKwp).toString(),
+      unit: "kWh/kWp",
+      icon: Gauge,
+      variant: "default" as const,
+      delay: 0.6,
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <>
       <AppHeader 
         title="Dashboard" 
         subtitle="Real-time energy monitoring and analytics"
       />
       
       <div className="p-6 space-y-6">
-        {/* Row 1: Financial & Daily Energy Stats (6 cards) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard
-            title="Monthly Bill Estimate"
-            value={energyStats.monthlyBillAmount.toFixed(2)}
-            unit="$"
-            icon={Receipt}
-            variant="financial"
-            delay={0}
-          />
-          <StatCard
-            title="Today's Savings"
-            value={energyStats.moneySaved.toFixed(2)}
-            unit="$"
-            icon={DollarSign}
-            variant="financial"
-            trend={{ value: 8, isPositive: true }}
-            delay={0.1}
-          />
-          <StatCard
-            title="CO₂ Saved Today"
-            value={energyStats.co2Saved.toFixed(2)}
-            unit="kg"
-            icon={Leaf}
-            variant="environment"
-            trend={{ value: 15, isPositive: true }}
-            delay={0.2}
-          />
-          <StatCard
-            title="Battery Charge Energy"
-            value={energyStats.batteryChargeEnergy.toFixed(2)}
-            unit="kWh"
-            icon={ArrowDown}
-            variant="battery"
-            delay={0.3}
-          />
-          <StatCard
-            title="Battery Discharge Energy"
-            value={energyStats.batteryDischargeEnergy.toFixed(2)}
-            unit="kWh"
-            icon={ArrowUp}
-            variant="battery"
-            delay={0.4}
-          />
-          <StatCard
-            title="Load Energy"
-            value={energyStats.loadEnergy.toFixed(2)}
-            unit="kWh"
-            icon={Home}
-            variant="consumption"
-            delay={0.5}
-          />
+        {/* Dashboard Stats - Desktop: show all in grid */}
+        <div className="hidden sm:grid sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          {[...priorityStats, ...additionalStats].map((stat) => (
+            <StatCard key={stat.title} {...stat} />
+          ))}
         </div>
 
-        {/* Row 2: Grid Import & Production Stats (6 cards) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard
-            title="Grid Import"
-            value={energyStats.gridImportEnergy.toFixed(2)}
-            unit="kWh"
-            icon={ArrowDown}
-            variant="grid"
-            delay={0.6}
-          />
-          <StatCard
-            title="Today's Production"
-            value={energyStats.dailyProduction.toFixed(2)}
-            unit="kWh"
-            icon={Sun}
-            variant="solar"
-            delay={0.8}
-          />
-          <StatCard
-            title="Predicted vs Actual"
-            value={`${energyStats.dailyProduction.toFixed(2)}/${energyStats.dailyPrediction.toFixed(2)}`}
-            unit="kWh"
-            icon={Target}
-            variant="prediction"
-            trend={energyStats.dailyPrediction > 0 ? { value: Math.round((energyStats.dailyProduction / energyStats.dailyPrediction) * 100 - 100), isPositive: energyStats.dailyProduction >= energyStats.dailyPrediction } : undefined}
-            delay={0.9}
-          />
-          <StatCard
-            title="Avg kWh/kWp"
-            value={energyStats.avgKwPerKwp.toFixed(2)}
-            unit="kWh/kWp"
-            icon={Gauge}
-            delay={1.0}
-          />
-          <StatCard
-            title="Self-Consumption"
-            value={energyStats.selfConsumption.toFixed(2)}
-            unit="%"
-            icon={Home}
-            variant="consumption"
-            delay={1.1}
-          />
-          <StatCard
-            title="Grid Exported"
-            value={energyStats.gridExportEnergy.toFixed(2)}
-            unit="kWh"
-            icon={ArrowUp}
-            variant="grid"
-            delay={1.2}
-          />
+        {/* Dashboard Stats - Mobile: Priority cards + See More */}
+        <div className="sm:hidden space-y-4">
+          {/* Priority Stats Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {priorityStats.map((stat) => (
+              <StatCard key={stat.title} {...stat} />
+            ))}
+          </div>
+
+          {/* Expandable Additional Stats */}
+          <AnimatePresence>
+            {showAllStats && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="grid grid-cols-2 gap-3 overflow-hidden"
+              >
+                {additionalStats.map((stat) => (
+                  <StatCard key={stat.title} {...stat} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toggle Button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAllStats(!showAllStats)}
+            className="w-full text-muted-foreground hover:text-foreground"
+          >
+            {showAllStats ? (
+              <>
+                <ChevronUp className="w-4 h-4 mr-2" />
+                Show Less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4 mr-2" />
+                See All Stats ({additionalStats.length} more)
+              </>
+            )}
+          </Button>
         </div>
 
-        {/* Main Content Grid */}
+        {/* Energy Flow and Billing Summary - Side by side on desktop, stacked on mobile */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
           {/* Energy Flow */}
           <div>
@@ -140,17 +160,19 @@ const Index = () => {
             />
           </div>
 
-          {/* Chart */}
+          {/* Billing Summary */}
           <div>
-            <EnergyChart data={chartData} title="Energy Overview - Today" className="h-full" />
+            <BillingSummary />
           </div>
         </div>
 
-        {/* Hierarchical Device Overview */}
-        <HierarchicalDeviceOverview />
-        
+        {/* Energy Chart - Full Width */}
+        <EnergyChart data={chartData} title="Energy Overview - Today" />
+
+        {/* Visual System Diagram */}
+        <VisualSystemDiagram />
       </div>
-    </div>
+    </>
   );
 };
 

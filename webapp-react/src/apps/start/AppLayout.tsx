@@ -55,13 +55,9 @@ export const StartAppLayout: React.FC = () => {
               <Sonner />
               <div className="flex h-screen overflow-hidden bg-background text-foreground">
               {/* Show sidebar on desktop, hide on mobile */}
-              <div className={isMobile ? 'hidden' : 'block'}>
-                <SharedSidebar />
-              </div>
+              {!isMobile && <SharedSidebar />}
               {/* Always render mobile bottom nav but hide on desktop */}
-              <div className={isMobile ? 'block' : 'hidden'}>
-                <MobileBottomNav />
-              </div>
+              {isMobile && <MobileBottomNav />}
               <main className={`flex-1 overflow-y-auto bg-background text-foreground ${isMobile ? 'pb-20' : ''}`}>
                 <Outlet />
               </main>
