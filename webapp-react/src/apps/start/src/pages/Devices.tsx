@@ -45,12 +45,12 @@ const DevicesPage = () => {
         subtitle="Manage your solar installation equipment"
       />
       
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Filters */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-4"
+          className="glass-card p-3 sm:p-4"
         >
           <div className="flex flex-col gap-4">
             {/* Search */}
@@ -105,7 +105,7 @@ const DevicesPage = () => {
         </div>
 
         {/* Device Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
           {filteredDevices.map((device, index) => (
             <DeviceCard
               key={device.id}

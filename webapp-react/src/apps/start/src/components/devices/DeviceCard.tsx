@@ -149,17 +149,17 @@ export function DeviceCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.4 }}
       className={cn(
-        "glass-card-hover p-5 border",
+        "glass-card-hover p-3 sm:p-5 border",
         colors.bg,
         colors.border
       )}
     >
       {/* Header */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center", colors.bg)}>
+      <div className="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-4">
+        <div className={cn("w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0", colors.bg)}>
           <DeviceIcon 
             type={type} 
-            className={cn("w-6 h-6", colors.icon)} 
+            className={cn("w-5 h-5 sm:w-6 sm:h-6", colors.icon)} 
             soc={type === "battery" && telemetryMetrics.length > 0 
               ? parseFloat(telemetryMetrics.find(m => m.label.toLowerCase().includes("soc"))?.value || "0") 
               : 78} 
@@ -167,18 +167,18 @@ export function DeviceCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-foreground truncate">{name}</h3>
-          <p className="text-xs text-muted-foreground capitalize">{type}</p>
+          <h3 className="text-sm sm:text-base font-semibold text-foreground break-words">{name}</h3>
+          <p className="text-[10px] sm:text-xs text-muted-foreground capitalize">{type}</p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground capitalize">{status}</span>
-          <div className={cn("w-2.5 h-2.5 rounded-full", statusColors[status])} />
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <span className="text-[10px] sm:text-xs text-muted-foreground capitalize hidden sm:inline">{status}</span>
+          <div className={cn("w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full", statusColors[status])} />
         </div>
       </div>
 
       {/* Telemetry Metrics Grid - matching dashboard style */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-3 sm:mb-4">
         {telemetryMetrics.map((metric, idx) => {
           const Icon = getMetricIcon(metric.label, type);
           const color = getMetricColor(metric.label, type);
@@ -189,18 +189,18 @@ export function DeviceCard({
           return (
             <div
               key={idx}
-              className="flex items-center gap-2 p-2 rounded-md bg-background/50"
+              className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-md bg-background/50"
             >
               {isBatteryIcon && soc !== undefined ? (
-                <DynamicBatteryIcon className={cn("w-4 h-4", color)} soc={soc} />
+                <DynamicBatteryIcon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0", color)} soc={soc} />
               ) : (
-                <Icon className={cn("w-4 h-4", color)} />
+                <Icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0", color)} />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] text-muted-foreground truncate">{metric.label}</p>
-                <p className={cn("font-mono text-sm font-medium truncate", color)}>
+                <p className="text-[9px] sm:text-[10px] text-muted-foreground truncate leading-tight">{metric.label}</p>
+                <p className={cn("font-mono text-xs sm:text-sm font-medium truncate leading-tight", color)}>
                   {metric.value}
-                  <span className="text-[10px] text-muted-foreground ml-0.5">{metric.unit}</span>
+                  <span className="text-[9px] sm:text-[10px] text-muted-foreground ml-0.5">{metric.unit}</span>
                 </p>
               </div>
             </div>
@@ -209,35 +209,35 @@ export function DeviceCard({
       </div>
 
       {/* Model & Serial */}
-      <div className="mb-4 p-2 rounded-lg bg-muted/50">
-        <div className="flex justify-between text-xs">
+      <div className="mb-3 sm:mb-4 p-1.5 sm:p-2 rounded-lg bg-muted/50">
+        <div className="flex justify-between text-[10px] sm:text-xs">
           <span className="text-muted-foreground">Model</span>
-          <span className="text-foreground font-medium">{model}</span>
+          <span className="text-foreground font-medium truncate ml-2">{model}</span>
         </div>
-        <div className="flex justify-between text-xs mt-1">
+        <div className="flex justify-between text-[10px] sm:text-xs mt-1">
           <span className="text-muted-foreground">Serial</span>
-          <span className="font-mono text-foreground">{serialNumber}</span>
+          <span className="font-mono text-foreground truncate ml-2">{serialNumber}</span>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <Button
           variant="outline"
           size="sm"
-          className="flex-1"
+          className="flex-1 text-xs sm:text-sm"
           onClick={onViewTelemetry}
         >
-          <Activity className="w-4 h-4 mr-2" />
+          <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
           Telemetry
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="flex-1"
+          className="flex-1 text-xs sm:text-sm"
           onClick={onConfigure}
         >
-          <Settings className="w-4 h-4 mr-2" />
+          <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
           Configure
         </Button>
       </div>
