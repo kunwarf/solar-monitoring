@@ -76,7 +76,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const { data: homeTelemetry } = useHomeTelemetry();
   const { data: allBatteryData } = useBatteryTelemetry();
   const { data: dailyEnergy } = useDailyEnergy();
-  const { data: hourlyData } = useHourlyEnergy();
+  // Fetch hourly energy data for all inverters (aggregated)
+  const { data: hourlyData, isLoading: hourlyLoading, error: hourlyError } = useHourlyEnergy({
+    inverterId: 'all',
+    date: undefined, // Use today's date
+  });
+  
+  // Debug logging for hourly data
+  useEffect(() => {
+    if (hourlyData) {
+      console.log('[DataProvider] Hourly data received:', {
+        count: hourlyData.length,
+        sample: hourlyData[0],
+        isLoading: hourlyLoading,
+        error: hourlyError,
+      });
+    } else {
+      console.log('[DataProvider] No hourly data:', {
+        isLoading: hourlyLoading,
+        error: hourlyError,
+      });
+    }
+  }, [hourlyData, hourlyLoading, hourlyError]);
 
   // Initialize data sync service on mount
   useEffect(() => {
@@ -167,44 +188,75 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
       });
 
+      // Get system-level meters for this system (meters already stored in system.meters)
+      const systemMeters: Meter[] = system.meters
+        .map(meter => {
+          const telemetry = meter.getTelemetry();
+          const power = meter.getPower();
+          const importKwh = meter.getImportEnergy();
+          const exportKwh = meter.getExportEnergy();
+          
+          return {
+            id: meter.id,
+            name: meter.name,
+            model: meter.model || 'Energy Meter',
+            serialNumber: meter.serialNumber || meter.id,
+            status: meter.getStatus(),
+            metrics: {
+              power: power * 1000, // Convert kW to W for display
+              importKwh: importKwh,
+              exportKwh: exportKwh,
+              frequency: 50.0,
+              powerFactor: 0.98,
+            },
+          };
+        });
+
       return {
         id: system.systemId,
         name: system.name,
         inverterArrays,
         batteryArrays,
+        meters: systemMeters,
       };
     });
 
-    // Transform meters - read telemetry directly to ensure we get latest values
-    const meters: Meter[] = primarySystem.meters.map(meter => {
-      const telemetry = meter.getTelemetry();
-      // Get latest telemetry values - these are updated by getSystemNow()
-      const power = meter.getPower(); // Returns kW (from gridPower)
-      const importKwh = meter.getImportEnergy(); // Returns kWh
-      const exportKwh = meter.getExportEnergy(); // Returns kWh
-      
-      console.log(`[DataProvider] Meter ${meter.id} metrics:`, {
-        power,
-        importKwh,
-        exportKwh,
-        hasTelemetry: !!telemetry,
+    // Transform home-level meters (meters with systemId="home" or attachmentTarget="home")
+    // These are meters not associated with a specific system
+    const meters: Meter[] = primarySystem.meters
+      .filter(meter => {
+        // Home-level meters: systemId is "home" or attachmentTarget is "home"
+        return meter.systemId === 'home' || meter.attachmentTarget === 'home';
+      })
+      .map(meter => {
+        const telemetry = meter.getTelemetry();
+        // Get latest telemetry values - these are updated by getSystemNow()
+        const power = meter.getPower(); // Returns kW (from gridPower)
+        const importKwh = meter.getImportEnergy(); // Returns kWh
+        const exportKwh = meter.getExportEnergy(); // Returns kWh
+        
+        console.log(`[DataProvider] Home-level Meter ${meter.id} metrics:`, {
+          power,
+          importKwh,
+          exportKwh,
+          hasTelemetry: !!telemetry,
+        });
+        
+        return {
+          id: meter.id,
+          name: meter.name,
+          model: meter.model || 'Energy Meter',
+          serialNumber: meter.serialNumber || meter.id,
+          status: meter.getStatus(),
+          metrics: {
+            power: power * 1000, // Convert kW to W for display (MeterCard expects W)
+            importKwh: importKwh,
+            exportKwh: exportKwh,
+            frequency: 50.0, // Default
+            powerFactor: 0.98, // Default
+          },
+        };
       });
-      
-      return {
-        id: meter.id,
-        name: meter.name,
-        model: meter.model || 'Energy Meter',
-        serialNumber: meter.serialNumber || meter.id,
-        status: meter.getStatus(),
-        metrics: {
-          power: power * 1000, // Convert kW to W for display (MeterCard expects W)
-          importKwh: importKwh,
-          exportKwh: exportKwh,
-          frequency: 50.0, // Default
-          powerFactor: 0.98, // Default
-        },
-      };
-    });
 
     return {
       id: primarySystem.systemId,
@@ -245,6 +297,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const daily = homeTelemetry.dailyEnergy;
     const financial = homeTelemetry.financialMetrics;
 
+    // Calculate today's savings from today's daily energy data
+    // Formula: (Load * Import Rate) - (Grid Import * Import Rate) + (Grid Export * Export Rate)
+    // This represents: what we would have paid without solar - what we actually paid + what we earned
+    let todaySavings = 0;
+    if (daily) {
+      const todayLoad = daily.load || 0;
+      const todayGridImport = daily.gridImport || 0;
+      const todayGridExport = daily.gridExport || 0;
+      
+      // Get rates from financial metrics if available, otherwise use defaults
+      // Note: We can't use useBillingConfig here as DataProvider might be outside the provider
+      // Instead, we'll use default rates or get them from the API response if available
+      const importRate = 50.0; // Default 50 PKR/kWh (should match billing config)
+      const exportRate = 22.0; // Default 22 PKR/kWh (should match billing config)
+      
+      // Calculate today's savings:
+      // Without solar: we would have paid (load * importRate)
+      // With solar: we paid (gridImport * importRate) and earned (gridExport * exportRate)
+      // Savings = (what we would have paid) - (what we actually paid) + (what we earned)
+      // Savings = (load * importRate) - (gridImport * importRate) + (gridExport * exportRate)
+      // Simplified: (load - gridImport) * importRate + (gridExport * exportRate)
+      todaySavings = (todayLoad - todayGridImport) * importRate + (todayGridExport * exportRate);
+    }
+
     return {
       solarPower: homeTelemetry.pvPower,
       batteryPower: homeTelemetry.batteryPower,
@@ -262,7 +338,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       gridImportEnergy: daily?.gridImport || 0,
       gridExportEnergy: daily?.gridExport || 0,
       co2Saved: financial?.co2PreventedKg || 0,
-      moneySaved: financial?.totalSavedPkr || 0,
+      moneySaved: todaySavings, // Use calculated today's savings instead of monthly total
       monthlyBillAmount: financial?.totalBillPkr || 0,
       dailyPrediction: 0, // Not available in current API
       avgKwPerKwp: 0, // Not available in current API
@@ -272,17 +348,83 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Transform chart data from hourly data
   const chartData = useMemo(() => {
-    if (!hourlyData || !Array.isArray(hourlyData)) {
-      return [];
+    console.log('[DataProvider] Transforming chart data, hourlyData:', {
+      hasData: !!hourlyData,
+      isArray: Array.isArray(hourlyData),
+      length: hourlyData?.length,
+      sample: hourlyData?.[0],
+    });
+
+    // If no hourly data, return 24 hours of empty data points so chart can render
+    if (!hourlyData || !Array.isArray(hourlyData) || hourlyData.length === 0) {
+      console.log('[DataProvider] No hourly data, returning empty 24-hour array');
+      return Array.from({ length: 24 }, (_, i) => ({
+        time: `${i.toString().padStart(2, '0')}:00`,
+        solar: 0,
+        consumption: 0,
+        battery: 0,
+        grid: 0,
+      }));
     }
 
-    return hourlyData.map(item => ({
-      time: item.time || '',
-      solar: item.solar || 0,
-      consumption: item.load || 0, // Map 'load' to 'consumption' for frontend compatibility
-      battery: item.battery || 0,
-      grid: item.grid || 0,
-    }));
+    // Transform hourly data to chart format
+    // Note: Backend returns energy in kWh, but chart displays power in kW
+    // For hourly data, we can use the energy values directly as they represent average power over the hour
+    const transformed = hourlyData.map(item => {
+      // Ensure time format is correct (HH:00)
+      let timeStr = item.time || '';
+      if (timeStr && !timeStr.includes(':')) {
+        // If time is just a number, format it
+        const hour = parseInt(timeStr);
+        if (!isNaN(hour)) {
+          timeStr = `${hour.toString().padStart(2, '0')}:00`;
+        }
+      }
+      
+      // Ensure solar is always non-negative and properly mapped
+      const solarValue = Math.max(0, item.solar || 0);
+      const loadValue = Math.max(0, item.load || 0);
+      const batteryValue = item.battery || 0; // Can be negative (discharge) or positive (charge)
+      const gridValue = item.grid || 0; // Can be negative (export) or positive (import)
+      
+      // Debug log for first few items to check data
+      if (transformed.length < 3) {
+        console.log('[DataProvider] Transforming item:', {
+          original: item,
+          transformed: {
+            time: timeStr,
+            solar: solarValue,
+            consumption: loadValue,
+            battery: batteryValue,
+            grid: gridValue,
+          },
+        });
+      }
+      
+      return {
+        time: timeStr,
+        solar: solarValue, // kWh (represents average kW over the hour), ensure non-negative
+        consumption: loadValue, // Map 'load' to 'consumption' for frontend compatibility
+        battery: Math.max(0, batteryValue), // Show only positive battery (charge), discharge will be 0
+        grid: gridValue, // Can be negative (export) or positive (import)
+      };
+    });
+    
+    // Check if we have any non-zero data
+    const hasData = transformed.some(item => 
+      item.solar > 0 || item.consumption > 0 || Math.abs(item.battery) > 0 || Math.abs(item.grid) > 0
+    );
+    
+    console.log('[DataProvider] Transformed chart data:', {
+      count: transformed.length,
+      hasNonZeroData: hasData,
+      sample: transformed[0],
+      last: transformed[transformed.length - 1],
+      maxSolar: Math.max(...transformed.map(d => d.solar)),
+      maxConsumption: Math.max(...transformed.map(d => d.consumption)),
+    });
+    
+    return transformed;
   }, [hourlyData]);
 
   // Transform devices list
