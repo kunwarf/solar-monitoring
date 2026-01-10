@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Sun, Home, Grid3X3, Cpu, Gauge, ArrowRight, Thermometer, Zap, Activity, ArrowDown, ArrowUp, Battery as BatteryIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useHomeHierarchyData } from "@/data/mockDataHooks";
 import type { Inverter, BatteryBank, Meter } from "@/data/mockData";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -62,6 +62,7 @@ function DeviceNode({
   index: number;
   total: number;
 }) {
+  const navigate = useNavigate();
   const getIcon = () => {
     if (type === "inverter") return <Cpu className="w-5 h-5" />;
     if (type === "battery") {
@@ -245,28 +246,31 @@ function DeviceNode({
     );
   };
 
+  const handleClick = () => {
+    navigate(`/telemetry?device=${device.id}`);
+  };
+
   return (
     <HoverCard openDelay={100} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <Link to={`/telemetry?device=${device.id}`}>
-          <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.1 + index * 0.05, type: "spring", stiffness: 300 }}
-            className={cn(
-              "relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer",
-              "hover:scale-110 transition-transform",
-              getColor()
-            )}
-          >
-            {getIcon()}
-            <span className="text-[10px] sm:text-xs font-mono font-medium mt-0.5">{getValue()}</span>
-            <div className={cn(
-              "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-background",
-              statusColors[device.status]
-            )} />
-          </motion.div>
-        </Link>
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.1 + index * 0.05, type: "spring", stiffness: 300 }}
+          onClick={handleClick}
+          className={cn(
+            "relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer",
+            "hover:scale-110 transition-transform",
+            getColor()
+          )}
+        >
+          {getIcon()}
+          <span className="text-[10px] sm:text-xs font-mono font-medium mt-0.5">{getValue()}</span>
+          <div className={cn(
+            "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-background",
+            statusColors[device.status]
+          )} />
+        </motion.div>
       </HoverCardTrigger>
       <HoverCardContent side="top" className="w-64 p-3">
         {renderHoverContent()}
@@ -449,6 +453,7 @@ function SystemVisualBlock({ system, index }: { system: any; index: number }) {
 
 export function VisualSystemDiagram() {
   const homeHierarchy = useHomeHierarchyData();
+  const navigate = useNavigate();
   
   if (!homeHierarchy) {
     return null;
@@ -487,13 +492,14 @@ export function VisualSystemDiagram() {
               const isExporting = powerKw < 0;
               const netImportExport = (meter.metrics?.exportKwh || 0) - (meter.metrics?.importKwh || 0);
               return (
-                <Link key={meter.id} to={`/telemetry?device=${meter.id}`}>
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 + i * 0.05 }}
-                    className="flex items-center gap-3 p-2.5 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
-                  >
+                <motion.div
+                  key={meter.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + i * 0.05 }}
+                  onClick={() => navigate(`/telemetry?device=${meter.id}`)}
+                  className="flex items-center gap-3 p-2.5 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
+                >
                     {/* Meter name & status */}
                     <div className="flex items-center gap-2.5 min-w-[140px]">
                       <div className="relative w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
@@ -553,7 +559,6 @@ export function VisualSystemDiagram() {
 
                     <ArrowRight className="w-4 h-4 text-muted-foreground ml-auto shrink-0" />
                   </motion.div>
-                </Link>
               );
             })}
           </div>
