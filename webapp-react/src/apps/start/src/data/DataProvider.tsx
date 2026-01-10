@@ -370,7 +370,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Transform hourly data to chart format
     // Note: Backend returns energy in kWh, but chart displays power in kW
     // For hourly data, we can use the energy values directly as they represent average power over the hour
-    const transformed = hourlyData.map(item => {
+    const transformed = hourlyData.map((item, index) => {
       // Ensure time format is correct (HH:00)
       let timeStr = item.time || '';
       if (timeStr && !timeStr.includes(':')) {
@@ -388,7 +388,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const gridValue = item.grid || 0; // Can be negative (export) or positive (import)
       
       // Debug log for first few items to check data
-      if (transformed.length < 3) {
+      if (index < 3) {
         console.log('[DataProvider] Transforming item:', {
           original: item,
           transformed: {
