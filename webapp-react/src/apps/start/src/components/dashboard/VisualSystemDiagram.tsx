@@ -247,7 +247,7 @@ function DeviceNode({
   };
 
   const handleClick = () => {
-    navigate(`/telemetry?device=${device.id}`);
+    navigate(`telemetry?device=${device.id}`);
   };
 
   return (
@@ -497,7 +497,7 @@ export function VisualSystemDiagram() {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.1 + i * 0.05 }}
-                  onClick={() => navigate(`/telemetry?device=${meter.id}`)}
+                  onClick={() => navigate(`telemetry?device=${meter.id}`)}
                   className="flex items-center gap-3 p-2.5 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
                 >
                     {/* Meter name & status */}
