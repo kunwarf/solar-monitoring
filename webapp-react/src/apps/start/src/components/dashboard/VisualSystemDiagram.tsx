@@ -331,16 +331,16 @@ function DeviceSection({
           )}
         </div>
 
-        {/* Right side: Stats - vertical layout on mobile, horizontal on desktop */}
+        {/* Right side: Stats - vertical layout with divider */}
         {extraStats && extraStats.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 sm:ml-auto border-t sm:border-t-0 border-border/30 sm:border-0 pt-2 sm:pt-0">
-            <div className="w-px h-full bg-border/40 self-stretch" />
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="flex items-center gap-3 ml-auto">
+            <div className="w-px h-full bg-border/40 self-stretch hidden sm:block" />
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
               {extraStats.map((stat, i) => (
                 <div key={i} className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-xs text-muted-foreground">{stat.label}:</span>
+                  <span className="text-[10px] text-muted-foreground">{stat.label}:</span>
                   <span className={cn(
-                    "text-xs font-mono font-bold",
+                    "text-[11px] font-mono font-bold",
                     stat.highlight ? "text-success" : "text-foreground"
                   )}>{stat.value}</span>
                 </div>
