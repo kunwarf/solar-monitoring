@@ -344,17 +344,21 @@ export const InverterDeviceSettings = forwardRef<InverterDeviceSettingsRef, Inve
       
       // Also fetch TOU windows from dedicated endpoint if this is an inverter
       try {
+        console.log('[InverterDeviceSettings] Attempting to fetch TOU windows from /api/inverter/tou-windows for device:', deviceId);
         const touWindows = await deviceService.getTouWindows(deviceId);
+        console.log('[InverterDeviceSettings] TOU windows response from endpoint:', touWindows);
         if (touWindows && touWindows.length > 0) {
           // Merge TOU windows into settings
           if (!settings.scheduling) {
             settings.scheduling = {};
           }
           settings.scheduling.touWindows = touWindows;
-          console.log('[InverterDeviceSettings] Fetched TOU windows from dedicated endpoint:', touWindows);
+          console.log('[InverterDeviceSettings] ✓ Successfully fetched and merged TOU windows from dedicated endpoint:', touWindows);
+        } else {
+          console.log('[InverterDeviceSettings] No TOU windows returned from dedicated endpoint (empty array or null)');
         }
       } catch (error) {
-        console.warn('[InverterDeviceSettings] Could not fetch TOU windows from dedicated endpoint:', error);
+        console.error('[InverterDeviceSettings] ✗ Error fetching TOU windows from dedicated endpoint:', error);
       }
       
       return settings;
@@ -611,11 +615,19 @@ export const InverterDeviceSettings = forwardRef<InverterDeviceSettingsRef, Inve
       }
       
       if (loadedWindows.length > 0) {
-        console.log('[InverterDeviceSettings] Loading TOU windows:', loadedWindows);
+        console.log('[InverterDeviceSettings] ✓ Loading TOU windows:', loadedWindows);
         setTouWindows(loadedWindows);
       } else {
-        console.log('[InverterDeviceSettings] No TOU windows found in settings. Full deviceSettings:', JSON.stringify(deviceSettings, null, 2));
-        console.log('[InverterDeviceSettings] Scheduling object:', deviceSettings.scheduling);
+        console.warn('[InverterDeviceSettings] ⚠ No TOU windows found in settings');
+        console.log('[InverterDeviceSettings] Device settings structure:', {
+          hasScheduling: !!deviceSettings.scheduling,
+          schedulingType: typeof deviceSettings.scheduling,
+          schedulingKeys: deviceSettings.scheduling ? Object.keys(deviceSettings.scheduling) : [],
+          schedulingValue: deviceSettings.scheduling,
+        });
+        console.log('[InverterDeviceSettings] Full deviceSettings:', deviceSettings);
+        // Keep empty array - user can add windows manually
+        setTouWindows([]);
       }
     }
   }, [deviceSettings, deviceId]);
