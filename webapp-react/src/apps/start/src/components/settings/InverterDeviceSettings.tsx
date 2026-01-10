@@ -340,7 +340,24 @@ export const InverterDeviceSettings = forwardRef<InverterDeviceSettingsRef, Inve
     queryKey: ['device-settings', deviceId],
     queryFn: async () => {
       const { deviceService } = await import('@root/api/services/device');
-      return await deviceService.getDeviceSettings(deviceId);
+      const settings = await deviceService.getDeviceSettings(deviceId);
+      
+      // Also fetch TOU windows from dedicated endpoint if this is an inverter
+      try {
+        const touWindows = await deviceService.getTouWindows(deviceId);
+        if (touWindows && touWindows.length > 0) {
+          // Merge TOU windows into settings
+          if (!settings.scheduling) {
+            settings.scheduling = {};
+          }
+          settings.scheduling.touWindows = touWindows;
+          console.log('[InverterDeviceSettings] Fetched TOU windows from dedicated endpoint:', touWindows);
+        }
+      } catch (error) {
+        console.warn('[InverterDeviceSettings] Could not fetch TOU windows from dedicated endpoint:', error);
+      }
+      
+      return settings;
     },
     enabled: !!deviceId,
   });

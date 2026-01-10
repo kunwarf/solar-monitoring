@@ -92,6 +92,36 @@ export const deviceService = {
   },
 
   /**
+   * Get TOU windows for an inverter
+   */
+  async getTouWindows(inverterId: string): Promise<Array<{
+    index?: number
+    start_time?: string
+    end_time?: string
+    power_w?: number
+    target_soc_pct?: number
+    target_voltage_v?: number
+    type?: string
+    mode?: string
+    enabled?: boolean
+  }>> {
+    try {
+      const response = await api.get<{
+        status?: string
+        inverter_id?: string
+        windows?: Array<any>
+      }>(
+        `/api/inverter/tou-windows?inverter_id=${inverterId}`,
+        { ttl: CACHE_TTL.CONFIG, key: `inverter:tou-windows:${inverterId}` }
+      )
+      return response.windows || []
+    } catch (error) {
+      console.error('[deviceService] Error fetching TOU windows:', error)
+      return []
+    }
+  },
+
+  /**
    * Save device settings
    */
   async saveDeviceSettings(
