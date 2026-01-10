@@ -258,14 +258,14 @@ function DeviceNode({
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1 + index * 0.05, type: "spring", stiffness: 300 }}
           onClick={handleClick}
-          className={cn(
-            "relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer",
-            "hover:scale-110 transition-transform",
-            getColor()
-          )}
-        >
-          {getIcon()}
-          <span className="text-[10px] sm:text-xs font-mono font-medium mt-0.5">{getValue()}</span>
+            className={cn(
+              "relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer",
+              "hover:scale-110 transition-transform",
+              getColor()
+            )}
+          >
+            {getIcon()}
+            <span className="text-[9px] sm:text-[10px] font-mono font-medium mt-0.5">{getValue()}</span>
           <div className={cn(
             "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-background",
             statusColors[device.status]
