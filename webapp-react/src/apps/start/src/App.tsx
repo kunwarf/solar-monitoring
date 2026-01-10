@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { BillingConfigProvider } from "@/hooks/use-billing-config";
 import { AuthProvider } from "@/hooks/use-auth";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { ServiceWorkerUpdatePrompt } from "@/components/ServiceWorkerUpdatePrompt";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import Devices from "./pages/Devices";
@@ -31,6 +32,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
+            <ServiceWorkerUpdatePrompt />
             <BrowserRouter>
               <Routes>
                 <Route path="/auth" element={<Auth />} />
