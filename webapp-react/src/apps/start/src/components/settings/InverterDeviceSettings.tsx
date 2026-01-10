@@ -556,12 +556,49 @@ export const InverterDeviceSettings = forwardRef<InverterDeviceSettingsRef, Inve
         }));
       }
 
-      // TOU Windows
-      if (deviceSettings.scheduling?.touWindows) {
-        console.log('[InverterDeviceSettings] Loading TOU windows:', deviceSettings.scheduling.touWindows);
-        setTouWindows(deviceSettings.scheduling.touWindows);
+      // TOU Windows - handle multiple possible formats from backend
+      let loadedWindows: TOUWindowData[] = [];
+      
+      // Check scheduling.touWindows
+      if (deviceSettings.scheduling?.touWindows && Array.isArray(deviceSettings.scheduling.touWindows)) {
+        loadedWindows = deviceSettings.scheduling.touWindows.map((w: any) => ({
+          mode: w.mode || w.type || 'auto',
+          startTime: w.startTime || w.start_time || '00:00',
+          endTime: w.endTime || w.end_time || '00:00',
+          power: w.power || w.power_w || 0,
+          targetSoc: w.targetSoc || w.target_soc_pct || 50,
+          enabled: w.enabled !== undefined ? w.enabled : true,
+        }));
+      }
+      // Check scheduling.tou_windows (snake_case)
+      else if (deviceSettings.scheduling?.tou_windows && Array.isArray(deviceSettings.scheduling.tou_windows)) {
+        loadedWindows = deviceSettings.scheduling.tou_windows.map((w: any) => ({
+          mode: w.mode || w.type || 'auto',
+          startTime: w.startTime || w.start_time || '00:00',
+          endTime: w.endTime || w.end_time || '00:00',
+          power: w.power || w.power_w || 0,
+          targetSoc: w.targetSoc || w.target_soc_pct || 50,
+          enabled: w.enabled !== undefined ? w.enabled : true,
+        }));
+      }
+      // Check if scheduling is an array directly
+      else if (Array.isArray(deviceSettings.scheduling)) {
+        loadedWindows = deviceSettings.scheduling.map((w: any) => ({
+          mode: w.mode || w.type || 'auto',
+          startTime: w.startTime || w.start_time || '00:00',
+          endTime: w.endTime || w.end_time || '00:00',
+          power: w.power || w.power_w || 0,
+          targetSoc: w.targetSoc || w.target_soc_pct || 50,
+          enabled: w.enabled !== undefined ? w.enabled : true,
+        }));
+      }
+      
+      if (loadedWindows.length > 0) {
+        console.log('[InverterDeviceSettings] Loading TOU windows:', loadedWindows);
+        setTouWindows(loadedWindows);
       } else {
-        console.log('[InverterDeviceSettings] No TOU windows found in settings');
+        console.log('[InverterDeviceSettings] No TOU windows found in settings. Full deviceSettings:', JSON.stringify(deviceSettings, null, 2));
+        console.log('[InverterDeviceSettings] Scheduling object:', deviceSettings.scheduling);
       }
     }
   }, [deviceSettings, deviceId]);
