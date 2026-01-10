@@ -306,10 +306,10 @@ function DeviceSection({
         color
       )}
     >
-      {/* Horizontal layout: Left (header + devices) | Right (stats) */}
-      <div className="flex items-stretch gap-3">
+      {/* Mobile: Stack vertically, Desktop: Horizontal layout */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3">
         {/* Left side: Header and device nodes */}
-        <div className="flex flex-col min-w-0">
+        <div className="flex flex-col min-w-0 flex-1">
           {/* Header with icon and title */}
           <div className="flex items-center gap-2 mb-2">
             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", color.replace("border-", "bg-").replace("/30", "/20"))}>
@@ -331,9 +331,9 @@ function DeviceSection({
           )}
         </div>
 
-        {/* Right side: Stats - vertical layout with divider */}
+        {/* Right side: Stats - vertical layout on mobile, horizontal on desktop */}
         {extraStats && extraStats.length > 0 && (
-          <div className="flex items-center gap-3 ml-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 sm:ml-auto border-t sm:border-t-0 border-border/30 sm:border-0 pt-2 sm:pt-0">
             <div className="w-px h-full bg-border/40 self-stretch" />
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               {extraStats.map((stat, i) => (
@@ -386,7 +386,7 @@ function SystemVisualBlock({ system, index }: { system: any; index: number }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.1 }}
-      className="rounded-xl border border-border/50 bg-card/50 p-3"
+      className="rounded-xl border border-border/50 bg-card/50 p-2.5 sm:p-3"
     >
       {/* System Header - compact */}
       <div className="flex items-center justify-between mb-3">
@@ -409,8 +409,8 @@ function SystemVisualBlock({ system, index }: { system: any; index: number }) {
         </Link>
       </div>
 
-      {/* Visual Flow Diagram - compact side-by-side layout */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-start">
+      {/* Visual Flow Diagram - stack on mobile, side-by-side on desktop */}
+      <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3 sm:gap-2 items-stretch sm:items-start">
         {/* Inverters Section */}
         {allInverters.length > 0 && (
           <DeviceSection
@@ -463,7 +463,7 @@ export function VisualSystemDiagram() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="rounded-xl border border-border/50 bg-card p-4"
+      className="rounded-xl border border-border/50 bg-card p-3 sm:p-4"
     >
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -498,10 +498,10 @@ export function VisualSystemDiagram() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.1 + i * 0.05 }}
                   onClick={() => navigate(`telemetry?device=${meter.id}`)}
-                  className="flex items-center gap-3 p-2.5 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
-                >
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 p-2.5 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
+                  >
                     {/* Meter name & status */}
-                    <div className="flex items-center gap-2.5 min-w-[140px]">
+                    <div className="flex items-center gap-2.5 w-full sm:min-w-[140px]">
                       <div className="relative w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                         <Gauge className="w-5 h-5 text-primary" />
                         <div className={cn(

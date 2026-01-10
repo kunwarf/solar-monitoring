@@ -90,7 +90,7 @@ const Index = () => {
         subtitle="Real-time energy monitoring and analytics"
       />
       
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Dashboard Stats - Desktop: show all in grid */}
         <div className="hidden sm:grid sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
           {[...priorityStats, ...additionalStats].map((stat) => (
