@@ -33,7 +33,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <ServiceWorkerUpdatePrompt />
-            <BrowserRouter>
+            <BrowserRouter basename="/start">
               <Routes>
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
