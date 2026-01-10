@@ -515,49 +515,53 @@ export function VisualSystemDiagram() {
                       </div>
                     </div>
 
-                    {/* Current Power */}
-                    <div className="flex items-center gap-1.5 min-w-[100px]">
-                      {isExporting ? <ArrowUp className="w-4 h-4 text-success" /> : <ArrowDown className="w-4 h-4 text-orange-400" />}
-                      <div>
-                        <p className={cn("text-sm font-mono font-semibold", isExporting ? "text-success" : "text-orange-400")}>
-                          {Math.abs(powerKw).toFixed(2)} kW {isExporting ? "Exporting" : "Importing"}
+                    {/* Stats grid for mobile */}
+                    <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                      {/* Current Power */}
+                      <div className="flex items-center gap-1.5 min-w-[100px]">
+                        {isExporting ? <ArrowUp className="w-4 h-4 text-success" /> : <ArrowDown className="w-4 h-4 text-orange-400" />}
+                        <div>
+                          <p className={cn("text-sm font-mono font-semibold", isExporting ? "text-success" : "text-orange-400")}>
+                            {Math.abs(powerKw).toFixed(2)} kW
+                          </p>
+                          <p className="text-xs text-muted-foreground">{isExporting ? "Exporting" : "Importing"}</p>
+                        </div>
+                      </div>
+
+                      {/* Import */}
+                      <div className="min-w-[80px]">
+                        <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.importKwh || 0).toFixed(1)} kWh</p>
+                        <p className="text-xs text-muted-foreground">Import</p>
+                      </div>
+
+                      {/* Export */}
+                      <div className="min-w-[80px]">
+                        <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.exportKwh || 0).toFixed(1)} kWh</p>
+                        <p className="text-xs text-muted-foreground">Export</p>
+                      </div>
+
+                      {/* Net */}
+                      <div className="min-w-[90px]">
+                        <p className={cn("text-sm font-mono font-semibold", netImportExport >= 0 ? "text-success" : "text-orange-400")}>
+                          {netImportExport >= 0 ? "+" : ""}{netImportExport.toFixed(1)} kWh
                         </p>
+                        <p className="text-xs text-muted-foreground">Net Balance</p>
+                      </div>
+
+                      {/* Frequency */}
+                      <div className="min-w-[70px] hidden lg:block">
+                        <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.frequency || 0).toFixed(2)} Hz</p>
+                        <p className="text-xs text-muted-foreground">Freq</p>
+                      </div>
+
+                      {/* Power Factor */}
+                      <div className="min-w-[50px] hidden lg:block">
+                        <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.powerFactor || 0).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">PF</p>
                       </div>
                     </div>
 
-                    {/* Import */}
-                    <div className="min-w-[80px] hidden sm:block">
-                      <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.importKwh || 0).toFixed(1)} kWh</p>
-                      <p className="text-xs text-muted-foreground">Import</p>
-                    </div>
-
-                    {/* Export */}
-                    <div className="min-w-[80px] hidden sm:block">
-                      <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.exportKwh || 0).toFixed(1)} kWh</p>
-                      <p className="text-xs text-muted-foreground">Export</p>
-                    </div>
-
-                    {/* Net */}
-                    <div className="min-w-[90px] hidden md:block">
-                      <p className={cn("text-sm font-mono font-semibold", netImportExport >= 0 ? "text-success" : "text-orange-400")}>
-                        {netImportExport >= 0 ? "+" : ""}{netImportExport.toFixed(1)} kWh
-                      </p>
-                      <p className="text-xs text-muted-foreground">Net Balance</p>
-                    </div>
-
-                    {/* Frequency */}
-                    <div className="min-w-[70px] hidden lg:block">
-                      <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.frequency || 0).toFixed(2)} Hz</p>
-                      <p className="text-xs text-muted-foreground">Freq</p>
-                    </div>
-
-                    {/* Power Factor */}
-                    <div className="min-w-[50px] hidden lg:block">
-                      <p className="text-sm font-mono font-medium text-foreground">{(meter.metrics?.powerFactor || 0).toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">PF</p>
-                    </div>
-
-                    <ArrowRight className="w-4 h-4 text-muted-foreground ml-auto shrink-0" />
+                    <ArrowRight className="w-4 h-4 text-muted-foreground hidden sm:block ml-auto shrink-0" />
                   </motion.div>
               );
             })}
